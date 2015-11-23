@@ -73,7 +73,7 @@ int main(int argc, char **argv)
 
     printf("Using %s\n", VERSION_INFO);
 
-    while ((c = getopt(argc, argv, "hs:v:p:u:t:r:l:T:n")) != EOF)
+    while ((c = getopt(argc, argv, "hs:v:p:u:t:r:l:T:n:I:E:R")) != EOF)
     {
         switch (c)
         {
@@ -108,11 +108,26 @@ int main(int argc, char **argv)
             case 'n':
                 nat_mode = 1;
                 break;
+            case 'I':
+                icmp_query_timeout = atoi((char *) optarg);
+                break;
+            case 'E':
+                tcp_estb_timeout = atoi((char *) optarg);
+                break;
+            case 'R':
+                tcp_trns_timeout = atoi((char *) optarg);
+                break;
         } /* switch */
     } /* -- while -- */
 
     /* -- zero out sr instance -- */
     sr_init_instance(&sr);
+
+    if (nat_mode) {
+        nat.icmp_query_timeout = icmp_query_timeout;
+        nat.tcp_estb_timeout = tcp_estb_timeout;
+        nat.tcp_trns_timeout = tcp_trns_timeout;
+    }
 
     struct sr_nat nat;
     sr.nat_mode = nat_mode;
