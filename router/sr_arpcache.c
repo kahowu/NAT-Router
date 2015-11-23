@@ -45,7 +45,7 @@ void handle_arpreq (struct sr_arpreq * req, struct sr_instance *sr) {
                 create_icmp_type3_header (ip_hdr, new_packet, dest_host_unreachable_type, dest_host_unreachable_code);
      
                 /* Look up routing table for rt entry that is mapped to the source of received packet */
-                struct sr_rt *src_lpm = routing_lpm(sr, ip_hdr->ip_src);
+                struct sr_rt *src_lpm = sr_routing_lpm(sr, ip_hdr->ip_src);
 
                 /* Send ICMP host unreachable message */
                 send_icmp_type3_msg (new_packet, src_lpm, sr_cache, sr, interface, packet_len); 

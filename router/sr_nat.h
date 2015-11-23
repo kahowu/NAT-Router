@@ -2,6 +2,16 @@
 #ifndef SR_NAT_TABLE_H
 #define SR_NAT_TABLE_H
 
+#define NAT_INTERNAL_INTERFACE "eth1"
+
+#define MAX_16B_UINT 65535
+
+#define MIN_PORT 1024
+#define TOTAL_PORTS MAX_16B_UINT - MIN_PORT
+
+#define MIN_ICMP_IDENTIFIER 1
+#define TOTAL_ICMP_IDENTIFIERS MAX_16B_UINT - MIN_ICMP_IDENTIFIER
+
 #include <inttypes.h>
 #include <time.h>
 #include <pthread.h>
@@ -33,6 +43,9 @@ struct sr_nat {
   /* add any fields here */
   struct sr_nat_mapping *mappings;
 
+  /* Mapping of available ICMP identifiers */
+  uint16_t free_icmp_identifiers[TOTAL_ICMP_IDENTIFIERS];
+
   /* threading */
   pthread_mutex_t lock;
   pthread_mutexattr_t attr;
@@ -59,6 +72,10 @@ struct sr_nat_mapping *sr_nat_lookup_internal(struct sr_nat *nat,
    You must free the returned structure if it is not NULL. */
 struct sr_nat_mapping *sr_nat_insert_mapping(struct sr_nat *nat,
   uint32_t ip_int, uint16_t aux_int, sr_nat_mapping_type type );
+
+int sr_nat_is_interface_internal(char *interface); 
+
+int sr_nat_generate_icmp_identifier(struct sr_nat *nat);
 
 
 #endif
