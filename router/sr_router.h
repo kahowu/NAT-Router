@@ -15,6 +15,7 @@
 
 #include "sr_protocol.h"
 #include "sr_arpcache.h"
+#include "sr_nat.h"
 
 /* we dont like this debug , but what to do for varargs ? */
 #ifdef _DEBUG_
@@ -54,6 +55,10 @@ struct sr_instance
     struct sr_arpcache cache;   /* ARP cache */
     pthread_attr_t attr;
     FILE* logfile;
+
+    /* for NAT */
+    int nat_mode;
+    struct sr_nat nat;
 };
 
 /* -- sr_main.c -- */
@@ -85,7 +90,7 @@ int check_min_len (unsigned int len, int type);
 int verify_ip_checksum (sr_ip_hdr_t *ip_hdr);
 int verify_icmp_checksum (sr_icmp_hdr_t *icmp_hdr, int type, int len);
 int decrement_and_recalculate (sr_ip_hdr_t *ip_hdr);
-struct sr_rt * routing_lpm (struct sr_instance* sr, uint32_t ip_dst);
+struct sr_rt * sr_routing_lpm (struct sr_instance* sr, uint32_t ip_dst);
 
 struct sr_if* get_router_interface (uint32_t ip, struct sr_instance* sr);
 
@@ -104,5 +109,8 @@ uint8_t* create_icmp_reply (uint8_t* packet, struct sr_if* if_walker, int packet
 void send_arp_req (sr_arp_hdr_t *arp_hdr, struct sr_arpcache *cache, struct sr_instance* sr);
 void send_echo_reply (struct sr_instance* sr, uint8_t * packet, unsigned int len, char* interface);
 void send_icmp_type3_msg (uint8_t * new_packet, struct sr_rt *src_lpm, struct sr_arpcache *sr_cache, struct sr_instance* sr, char* interface, unsigned int len);
+
+void route_packet (struct sr_instance* sr,  uint8_t * packet, unsigned int len, char* interface);
+int is_icmp_echo_reply(sr_icmp_hdr_t *icmp_hdr);
 
 #endif /* SR_ROUTER_H */
