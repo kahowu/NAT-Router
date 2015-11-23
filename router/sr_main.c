@@ -46,6 +46,11 @@ extern char* optarg;
 #define DEFAULT_RTABLE "rtable"
 #define DEFAULT_TOPO 0
 
+/* Inclusions for NAT */
+#define DEFAULT_ICMP_QUERY_TIMEOUT 60
+#define DEFAULT_TCP_ESTB_TIMEOUT 7440
+#define DEFAULT_TCP_TRNS_TIMEOUT 300
+
 static void usage(char* );
 static void sr_init_instance(struct sr_instance* );
 static void sr_destroy_instance(struct sr_instance* );
@@ -70,6 +75,9 @@ int main(int argc, char **argv)
 
     /* NAT */
     int nat_mode = 0; /* NAT mode is not activated by default. */
+    unsigned int icmp_query_timeout = DEFAULT_ICMP_QUERY_TIMEOUT;
+    unsigned int tcp_estb_timeout = DEFAULT_TCP_ESTB_TIMEOUT;
+    unsigned int tcp_trns_timeout = DEFAULT_TCP_TRNS_TIMEOUT;
 
     printf("Using %s\n", VERSION_INFO);
 
@@ -123,13 +131,14 @@ int main(int argc, char **argv)
     /* -- zero out sr instance -- */
     sr_init_instance(&sr);
 
+    struct sr_nat nat;
+
     if (nat_mode) {
         nat.icmp_query_timeout = icmp_query_timeout;
         nat.tcp_estb_timeout = tcp_estb_timeout;
         nat.tcp_trns_timeout = tcp_trns_timeout;
     }
 
-    struct sr_nat nat;
     sr.nat_mode = nat_mode;
     sr.nat = nat;
 
