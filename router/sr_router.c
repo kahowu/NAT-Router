@@ -41,6 +41,11 @@ void sr_init(struct sr_instance* sr)
     /* Initialize cache and cache cleanup thread */
     sr_arpcache_init(&(sr->cache));
 
+
+    /* NAT */
+    if (sr->nat_mode) {
+   	 sr_nat_init(&(sr->nat));
+    }
     pthread_attr_init(&(sr->attr));
     pthread_attr_setdetachstate(&(sr->attr), PTHREAD_CREATE_JOINABLE);
     pthread_attr_setscope(&(sr->attr), PTHREAD_SCOPE_SYSTEM);
@@ -50,7 +55,6 @@ void sr_init(struct sr_instance* sr)
     pthread_create(&thread, &(sr->attr), sr_arpcache_timeout, sr);
     
     /* Add initialization code here! */
-
 
 } /* -- sr_init -- */
 
@@ -280,8 +284,8 @@ void sr_iphandler (struct sr_instance* sr,
                     if (ip_p == ip_protocol_icmp) {
                         printf("## -> (EX-IN) ICMP\n");
 
-                        struct sr_nat_mapping *nat_lookup = sr_nat_lookup_external(&(sr->nat), icmp_hdr->icmp_aux_identifier, nat_mapping_icmp);
-                        if (nat_lookup != NULL) {
+                        struct sr_nat_mapping *nat_lookup = sr_nat_lookup_external(&(sr->nat), icmp_hdr->icmp_aux_identifier, nat_mapping_icmp); 
+		        if (nat_lookup != NULL) {
                             if (is_icmp_echo_reply(icmp_hdr)) {
                                 ip_hdr->ip_dst = nat_lookup->ip_int;
                                 icmp_hdr->icmp_aux_identifier= nat_lookup->aux_int;
@@ -311,6 +315,7 @@ void sr_iphandler (struct sr_instance* sr,
                                 }             
                             }
                         } else {
+			    printf ("Got here");
                             return; 
                         }
                     } else if (ip_p == ip_protocol_tcp) {
