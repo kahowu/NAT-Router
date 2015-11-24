@@ -3,7 +3,7 @@
 #include <string.h>
 #include "sr_protocol.h"
 #include "sr_utils.h"
-
+#include "sr_nat.h"
 
 uint16_t cksum (const void *_data, int len) {
   const uint8_t *data = _data;
@@ -29,6 +29,18 @@ uint8_t ip_protocol(uint8_t *buf) {
   sr_ip_hdr_t *iphdr = (sr_ip_hdr_t *)(buf);
   return iphdr->ip_p;
 }
+
+
+/* Prints out nat mapping entry */ 
+void print_nat_mapping (struct sr_nat_mapping* nat_mapping) {
+  print_addr_ip_int(nat_mapping->ip_int);
+  print_addr_ip_int(nat_mapping->ip_ext);
+  print_addr_ip_int(nat_mapping->aux_int);
+  print_addr_ip_int(nat_mapping->aux_ext);
+  return; 
+}
+
+
 
 
 /* Prints out formatted Ethernet address, e.g. 00:11:22:33:44:55 */

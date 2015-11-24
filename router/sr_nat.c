@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "sr_utils.h"
+
 
 int sr_nat_init(struct sr_nat *nat) { /* Initializes the nat */
 
@@ -65,6 +67,7 @@ void *sr_nat_timeout(void *nat_ptr) {  /* Periodic Timout handling */
 struct sr_nat_mapping *sr_nat_lookup_external(struct sr_nat *nat,
     uint16_t aux_ext, sr_nat_mapping_type type ) {
 
+  printf  ("NAT lookup given external port \n"); 
   pthread_mutex_lock(&(nat->lock));
 
   /* handle lookup here, malloc and assign to copy */
@@ -80,6 +83,7 @@ struct sr_nat_mapping *sr_nat_lookup_external(struct sr_nat *nat,
   }
 
   pthread_mutex_unlock(&(nat->lock));
+  print_nat_mapping (target_mapping);
   return target_mapping;
 
 }
@@ -88,6 +92,9 @@ struct sr_nat_mapping *sr_nat_lookup_external(struct sr_nat *nat,
    You must free the returned structure if it is not NULL. */
 struct sr_nat_mapping *sr_nat_lookup_internal(struct sr_nat *nat,
   uint32_t ip_int, uint16_t aux_int, sr_nat_mapping_type type ) {
+
+  printf  ("NAT lookup given internal port \n");
+  
 
   pthread_mutex_lock(&(nat->lock));
 
@@ -105,6 +112,8 @@ struct sr_nat_mapping *sr_nat_lookup_internal(struct sr_nat *nat,
   }
 
   pthread_mutex_unlock(&(nat->lock));
+ /* print_nat_mapping (target_mapping);*/
+/*  assert (target_mapping != NULL);*/
   return target_mapping;
 }
 
