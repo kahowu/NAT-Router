@@ -44,6 +44,7 @@ void sr_init(struct sr_instance* sr)
 
     /* NAT */
     if (sr->nat_mode) {
+         printf ("Nat is enabled \n");
    	 sr_nat_init(&(sr->nat));
     }
     pthread_attr_init(&(sr->attr));
@@ -244,7 +245,8 @@ void sr_iphandler (struct sr_instance* sr,
 
                         ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
                         icmp_hdr->icmp_sum = cksum(icmp_hdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
-
+                        
+           		print_hdrs (packet, len);
                         /* check routing table, and perform LPM */ 
                         /* Look up routing table for the rt entry that is mapped to the destination of received packet */
                         if (dst_lpm) {
@@ -288,12 +290,15 @@ void sr_iphandler (struct sr_instance* sr,
 		        if (nat_lookup != NULL) {
                             if (is_icmp_echo_reply(icmp_hdr)) {
                                 ip_hdr->ip_dst = nat_lookup->ip_int;
+                                ip_hdr->ip_src = nat_lookup->ip_ext; 
                                 icmp_hdr->icmp_aux_identifier= nat_lookup->aux_int;
                                 nat_lookup->last_updated = time(NULL);
 
                                 ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
                                 icmp_hdr->icmp_sum = cksum(icmp_hdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
-                                if (dst_lpm) {
+                                print_hdrs (packet, len);
+                                struct sr_rt *dst_lpm = sr_routing_lpm (sr, ip_hdr->ip_dst);
+				if (dst_lpm) {
                                     struct sr_if *out_iface = sr_get_interface(sr, dst_lpm->interface);
                                     /* If there is a match, check ARP cache */
                                     struct sr_arpentry * arp_entry = sr_arpcache_lookup (sr_cache, dst_lpm->gw.s_addr); 

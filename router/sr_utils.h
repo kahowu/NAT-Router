@@ -25,6 +25,7 @@
  *
  */
 
+#include "sr_nat.h"
 #ifndef SR_UTILS_H
 #define SR_UTILS_H
 
@@ -41,6 +42,8 @@ void print_hdr_eth(uint8_t *buf);
 void print_hdr_ip(uint8_t *buf);
 void print_hdr_icmp(uint8_t *buf);
 void print_hdr_arp(uint8_t *buf);
+void print_nat_mapping (struct sr_nat_mapping* nat_mapping);
+
 
 /* prints all headers, starting from eth */
 void print_hdrs(uint8_t *buf, uint32_t length);
