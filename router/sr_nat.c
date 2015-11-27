@@ -53,7 +53,7 @@ void *sr_nat_timeout(void *nat_ptr) {  /* Periodic Timout handling */
     sleep(1.0);
     pthread_mutex_lock(&(nat->lock));
 
-    time_t curtime = time(NULL);
+    /*time_t curtime = time(NULL);*/
 
     /* handle periodic tasks here */
 
@@ -117,6 +117,18 @@ struct sr_nat_mapping *sr_nat_lookup_internal(struct sr_nat *nat,
   return target_mapping;
 }
 
+/* Get the connection associated with the given IP in the NAT entry. */
+struct sr_nat_connection *sr_nat_lookup_connection (struct sr_nat_connection *curr_connection, uint32_t ip_connection) {
+    while (curr_connection != NULL) {
+        if (curr_connection->ip == ip_connection) {
+            return curr_connection;
+        }
+       curr_connection = curr_connection->next;
+    }
+
+    return NULL;
+}
+
 /* Insert a new mapping into the nat's mapping table.
    Actually returns a copy to the new mapping, for thread safety.
  */
@@ -146,22 +158,61 @@ struct sr_nat_mapping *sr_nat_insert_mapping(struct sr_nat *nat,
 /* Generate a unique icmp identifier with o(n) complexity */
 int sr_nat_generate_icmp_identifier(struct sr_nat *nat) {
 
-  pthread_mutex_lock(&(nat->lock));
+    pthread_mutex_lock(&(nat->lock));
 
-  uint16_t *free_icmp_identifiers = nat->free_icmp_identifiers;
-  int i;
+    uint16_t *free_icmp_identifiers = nat->free_icmp_identifiers;
+    int i;
 
-  for (i = MIN_ICMP_IDENTIFIER; i <= TOTAL_ICMP_IDENTIFIERS; i++) {
-    if (free_icmp_identifiers[i] == 0) {
-      free_icmp_identifiers[i] = 1;
-      printf("Allocated ICMP identifier: %d\n", i);
+    for (i = MIN_ICMP_IDENTIFIER; i <= TOTAL_ICMP_IDENTIFIERS; i++) {
+        if (free_icmp_identifiers[i] == 0) {
+            free_icmp_identifiers[i] = 1;
+            printf("Allocated ICMP identifier: %d\n", i);
 
-      return i;
+            return i;
+        }
     }
-  }
 
-  pthread_mutex_unlock(&(nat->lock));
-  return -1;
+    pthread_mutex_unlock(&(nat->lock));
+    return -1;
+}
+
+/* Generate a unique tcp identifier with o(n) complexity */
+int sr_nat_generate_tcp_port(struct sr_nat *nat) {
+
+    pthread_mutex_lock(&(nat->lock));
+
+    uint16_t *free_tcp_ports = nat->free_tcp_ports;
+    int i;
+
+    for (i = MIN_TCP_PORT; i <= TOTAL_TCP_PORTS; i++) {
+        if (free_tcp_ports[i] == 0) {
+            free_tcp_ports[i] = 1;
+            printf("Allocated TCP Port: %d\n", i);
+
+            return i;
+        }
+    }
+
+    pthread_mutex_unlock(&(nat->lock));
+    return -1;
+}
+
+/* Insert a new connection associated with the given IP in the NAT entry. */
+struct sr_nat_connection *sr_nat_insert_tcp_connection (struct sr_nat_mapping *mapping, uint32_t ip_connection) {
+    struct sr_nat_connection *new_connection = malloc(sizeof(struct sr_nat_connection));
+    assert(new_connection != NULL);
+    memset(new_connection, 0, sizeof(struct sr_nat_connection));
+
+    new_connection->last_updated = time(NULL);
+    new_connection->ip = ip_connection;
+    new_connection->tcp_state = CLOSED;
+
+    struct sr_nat_connection *curr_connection = mapping->conns;
+
+    mapping->conns = new_connection;
+    new_connection->next = curr_connection;
+
+    return new_connection;
 }
 
 /* Check to see if given interface is a NAT internal interface "eth1" */
