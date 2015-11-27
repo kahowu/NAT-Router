@@ -112,5 +112,6 @@ void send_icmp_type3_msg (uint8_t * new_packet, struct sr_rt *src_lpm, struct sr
 
 void route_packet (struct sr_instance* sr,  uint8_t * packet, unsigned int len, char* interface);
 int is_icmp_echo_reply(sr_icmp_hdr_t *icmp_hdr);
+int is_icmp_echo_request(sr_icmp_hdr_t *icmp_hdr);
 
 #endif /* SR_ROUTER_H */

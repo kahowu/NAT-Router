@@ -26,8 +26,8 @@ uint16_t ethertype(uint8_t *buf) {
 }
 
 uint8_t ip_protocol(uint8_t *buf) {
-  sr_ip_hdr_t *iphdr = (sr_ip_hdr_t *)(buf);
-  return iphdr->ip_p;
+  sr_ip_hdr_t *ip_hdr = (sr_ip_hdr_t *)(buf);
+  return ip_hdr->ip_p;
 }
 
 
@@ -40,7 +40,38 @@ void print_nat_mapping (struct sr_nat_mapping* nat_mapping) {
   return; 
 }
 
+uint32_t tcp_cksum(sr_ip_hdr_t *ip_hdr, sr_tcp_hdr_t *tcp_hdr, int total_len) {
 
+  uint8_t *full_tcp;
+  sr_tcp_psuedo_hdr_t *tcp_psuedo_hdr;
+
+  int tcp_len = total_len - (sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+  int full_tcp_len = sizeof(sr_tcp_psuedo_hdr_t) + tcp_len;
+
+  tcp_psuedo_hdr = malloc(sizeof(sr_tcp_psuedo_hdr_t));
+  memset(tcp_psuedo_hdr, 0, sizeof(sr_tcp_psuedo_hdr_t));
+
+  tcp_psuedo_hdr->ip_src = ip_hdr->ip_src;
+  tcp_psuedo_hdr->ip_dst = ip_hdr->ip_dst;
+  tcp_psuedo_hdr->ip_p = ip_hdr->ip_p;
+  tcp_psuedo_hdr->tcp_len = htons(tcp_len);
+
+  uint16_t currCksum = tcp_hdr->tcp_sum;
+  tcp_hdr->tcp_sum = 0;
+
+  full_tcp = malloc(sizeof(sr_tcp_psuedo_hdr_t) + tcp_len);
+  memcpy(full_tcp, (uint8_t *) tcp_psuedo_hdr, sizeof(sr_tcp_psuedo_hdr_t));
+  memcpy(&(full_tcp[sizeof(sr_tcp_psuedo_hdr_t)]), (uint8_t *) tcp_hdr, tcp_len);
+  tcp_hdr->tcp_sum = currCksum;
+
+  uint16_t calcCksum = cksum(full_tcp, full_tcp_len);
+
+  /* Clear out memory used for creation of complete tcp packet */
+  free(tcp_psuedo_hdr);
+  free(full_tcp);
+
+  return calcCksum;
+}
 
 
 /* Prints out formatted Ethernet address, e.g. 00:11:22:33:44:55 */
@@ -91,33 +122,33 @@ void print_hdr_eth(uint8_t *buf) {
 
 /* Prints out fields in IP header. */
 void print_hdr_ip(uint8_t *buf) {
-  sr_ip_hdr_t *iphdr = (sr_ip_hdr_t *)(buf);
+  sr_ip_hdr_t *ip_hdr = (sr_ip_hdr_t *)(buf);
   fprintf(stderr, "IP header:\n");
-  fprintf(stderr, "\tversion: %d\n", iphdr->ip_v);
-  fprintf(stderr, "\theader length: %d\n", iphdr->ip_hl);
-  fprintf(stderr, "\ttype of service: %d\n", iphdr->ip_tos);
-  fprintf(stderr, "\tlength: %d\n", ntohs(iphdr->ip_len));
-  fprintf(stderr, "\tid: %d\n", ntohs(iphdr->ip_id));
+  fprintf(stderr, "\tversion: %d\n", ip_hdr->ip_v);
+  fprintf(stderr, "\theader length: %d\n", ip_hdr->ip_hl);
+  fprintf(stderr, "\ttype of service: %d\n", ip_hdr->ip_tos);
+  fprintf(stderr, "\tlength: %d\n", ntohs(ip_hdr->ip_len));
+  fprintf(stderr, "\tid: %d\n", ntohs(ip_hdr->ip_id));
 
-  if (ntohs(iphdr->ip_off) & IP_DF)
+  if (ntohs(ip_hdr->ip_off) & IP_DF)
     fprintf(stderr, "\tfragment flag: DF\n");
-  else if (ntohs(iphdr->ip_off) & IP_MF)
+  else if (ntohs(ip_hdr->ip_off) & IP_MF)
     fprintf(stderr, "\tfragment flag: MF\n");
-  else if (ntohs(iphdr->ip_off) & IP_RF)
+  else if (ntohs(ip_hdr->ip_off) & IP_RF)
     fprintf(stderr, "\tfragment flag: R\n");
 
-  fprintf(stderr, "\tfragment offset: %d\n", ntohs(iphdr->ip_off) & IP_OFFMASK);
-  fprintf(stderr, "\tTTL: %d\n", iphdr->ip_ttl);
-  fprintf(stderr, "\tprotocol: %d\n", iphdr->ip_p);
+  fprintf(stderr, "\tfragment offset: %d\n", ntohs(ip_hdr->ip_off) & IP_OFFMASK);
+  fprintf(stderr, "\tTTL: %d\n", ip_hdr->ip_ttl);
+  fprintf(stderr, "\tprotocol: %d\n", ip_hdr->ip_p);
 
   /*Keep checksum in NBO*/
-  fprintf(stderr, "\tchecksum: %d\n", iphdr->ip_sum);
+  fprintf(stderr, "\tchecksum: %d\n", ip_hdr->ip_sum);
 
   fprintf(stderr, "\tsource: ");
-  print_addr_ip_int(ntohl(iphdr->ip_src));
+  print_addr_ip_int(ntohl(ip_hdr->ip_src));
 
   fprintf(stderr, "\tdestination: ");
-  print_addr_ip_int(ntohl(iphdr->ip_dst));
+  print_addr_ip_int(ntohl(ip_hdr->ip_dst));
 }
 
 /* Prints out ICMP header fields */

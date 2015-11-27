@@ -4,13 +4,13 @@
 
 #define NAT_INTERNAL_INTERFACE "eth1"
 
-#define MAX_16B_UINT 65535
+#define MAX_16B_NUM 65535
 
-#define MIN_PORT 1024
-#define TOTAL_PORTS MAX_16B_UINT - MIN_PORT
+#define MIN_TCP_PORT 1024
+#define TOTAL_TCP_PORTS MAX_16B_NUM - MIN_TCP_PORT
 
 #define MIN_ICMP_IDENTIFIER 1
-#define TOTAL_ICMP_IDENTIFIERS MAX_16B_UINT - MIN_ICMP_IDENTIFIER
+#define TOTAL_ICMP_IDENTIFIERS MAX_16B_NUM - MIN_ICMP_IDENTIFIER
 
 #include <inttypes.h>
 #include <time.h>
@@ -22,10 +22,28 @@ typedef enum {
   /* nat_mapping_udp, */
 } sr_nat_mapping_type;
 
-struct sr_nat_connection {
-  /* add TCP connection state data members here */
+typedef enum {
+  CLOSE_WAIT,
+  CLOSED,
+  CLOSING,
+  ESTABLISHED,
+  FIN_WAIT_1,
+  FIN_WAIT_2,
+  LAST_ACK,
+  LISTEN,
+  SYN_RCVD,
+  SYN_SENT,
+  TIME_WAIT
+} sr_tcp_state;
 
-  struct sr_nat_connection *next;
+struct sr_nat_connection {
+    /* add TCP connection state data members here */
+    uint16_t ip;
+    time_t last_updated;
+    uint32_t client_isn;
+    uint32_t server_isn; 
+    sr_tcp_state tcp_state;
+    struct sr_nat_connection *next;
 };
 
 struct sr_nat_mapping {
@@ -50,6 +68,7 @@ struct sr_nat {
 
   /* Mapping of available ICMP identifiers */
   uint16_t free_icmp_identifiers[TOTAL_ICMP_IDENTIFIERS];
+  uint16_t free_tcp_ports[TOTAL_TCP_PORTS];
 
 
   /* threading */
@@ -83,5 +102,10 @@ int sr_nat_is_interface_internal(char *interface);
 
 int sr_nat_generate_icmp_identifier(struct sr_nat *nat);
 
+struct sr_nat_connection *sr_nat_lookup_connection (struct sr_nat_connection *curr_connection, uint32_t ip_connection);
+
+struct sr_nat_connection *sr_nat_insert_tcp_connection (struct sr_nat_mapping *mapping, uint32_t ip_connection);
+
+int sr_nat_generate_tcp_port(struct sr_nat *nat);
 
 #endif
