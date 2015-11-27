@@ -733,6 +733,18 @@ void route_packet (struct sr_instance* sr,
     /* ARP Cache */
     struct sr_arpcache *sr_cache = &sr->cache;
 
+    /* Check for mininum length  */
+    if (check_min_len (len, IP_PACKET)) {
+        printf("IP packet does not satisfy mininum length requirement \n");
+        return;
+    }
+
+    /* Verify checksum */
+    if (verify_ip_checksum (ip_hdr)) {
+        printf("IP Header checksum fails\n");
+        return;
+    } 
+
     /* If time exceeded, send out time exceeded message */
     if (decrement_and_recalculate (ip_hdr)){
         printf("TTL of IP is 0. Time exceeded. \n");
@@ -856,6 +868,30 @@ void route_packet (struct sr_instance* sr,
                 handle_arpreq(req, sr);
                 return;
             }
+
+        /* If there is no match in routing table, send ICMP net unreachable */
+        } else {
+            int packet_len = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t3_hdr_t);
+            uint8_t *new_packet = malloc(packet_len);
+
+            /* Create ethernet header */
+            create_ethernet_header (eth_hdr, new_packet, eth_hdr->ether_dhost, eth_hdr->ether_shost, htons(ethertype_ip));
+
+            /* Create ip header */
+            create_ip_header (ip_hdr, new_packet, sr_get_interface(sr, interface)->ip, ip_hdr->ip_src);
+
+            /* Create icmp header */
+            create_icmp_type3_header (ip_hdr, new_packet, dest_net_unreachable_type, dest_net_unreachable_code);
+
+            /* Look up routing table for rt entry that is mapped to the source of received packet */
+            struct sr_rt *src_lpm = sr_routing_lpm(sr, ip_hdr->ip_src);
+
+            /* Send ICMP net unreachable message */
+            send_icmp_type3_msg (new_packet, src_lpm, sr_cache, sr, interface, packet_len); 
+
+            free (new_packet);
+        
+            return; 
         }
     }
 }
