@@ -173,9 +173,6 @@ void sr_iphandler (struct sr_instance* sr,
     /* Get IP header */
     sr_ip_hdr_t * ip_hdr = get_ip_hdr(packet);
 
-    /* Get ICMP header */
-    sr_icmp_hdr_t *icmp_hdr = get_icmp_hdr (packet);
-
     /* ARP Cache */
     struct sr_arpcache *sr_cache = &sr->cache;
 
@@ -224,8 +221,10 @@ void sr_iphandler (struct sr_instance* sr,
             if (sr_nat_is_interface_internal(interface)) {
 
                 /* Packet is for the router or the internal interface */
-                /*if (target_iface != NULL || sr_nat_is_interface_internal(dst_lpm->interface)) {*/
-                if (target_iface) {
+                if (target_iface != NULL || sr_nat_is_interface_internal(dst_lpm->interface)) {
+                    /* Get ICMP header */
+                    sr_icmp_hdr_t *icmp_hdr = get_icmp_hdr (packet);
+
                     if (ip_p == ip_protocol_icmp) {
                         if (is_icmp_echo_request (icmp_hdr)) {
                             send_echo_reply (sr, packet, len, interface);
@@ -234,13 +233,32 @@ void sr_iphandler (struct sr_instance* sr,
                             return;
                         }
                     } else if (ip_p == ip_protocol_tcp) {
+                        int packet_len = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t3_hdr_t);
 
+                        uint8_t *new_packet = malloc(len);
 
+                        /* Create ethernet header */
+                        create_ethernet_header (eth_hdr, new_packet, sr_get_interface(sr, interface)->addr, eth_hdr->ether_shost, htons(ethertype_ip));
+
+                        /* Create ip header */
+                        create_ip_header (ip_hdr, new_packet, target_iface->ip, ip_hdr->ip_src);
+
+                        /* Create icmp header */
+                        create_icmp_type3_header (ip_hdr, new_packet, port_unreachable_type, port_unreachable_code);
+
+                        /* Send ICMP port unreachable message */
+                        sr_send_packet (sr, new_packet, packet_len, interface);
+
+                        free(new_packet);
+                        return; 
                     }
 
                 /* Packet is for the external interface */
                 } else {
                     if (ip_p == ip_protocol_icmp) {
+                        /* Get ICMP header */
+                        sr_icmp_hdr_t *icmp_hdr = get_icmp_hdr (packet);
+
                         printf("Protocol is ICMP\n");
                         struct sr_nat_mapping *nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_aux_identifier, nat_mapping_icmp);
                         if (nat_lookup == NULL) {
@@ -249,7 +267,6 @@ void sr_iphandler (struct sr_instance* sr,
                             nat_lookup->aux_ext = sr_nat_generate_icmp_identifier(&(sr->nat));
                         }
 
-
                         nat_lookup->last_updated = time(NULL);
                         icmp_hdr->icmp_aux_identifier = nat_lookup->aux_ext;
                         ip_hdr->ip_src = nat_lookup->ip_ext;
@@ -257,31 +274,8 @@ void sr_iphandler (struct sr_instance* sr,
                         icmp_hdr->icmp_sum = 0;
                         ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
                         icmp_hdr->icmp_sum = cksum(icmp_hdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
-                        
-                        /* check routing table, and perform LPM */ 
-                        /* Look up routing table for the rt entry that is mapped to the destination of received packet */
-                        if (dst_lpm) {
-                            struct sr_if *out_iface = sr_get_interface(sr, dst_lpm->interface);
-                            /* If there is a match, check ARP cache */
-                            struct sr_arpentry * arp_entry = sr_arpcache_lookup (sr_cache, dst_lpm->gw.s_addr); 
-                            /* If there is a match in our ARP cache, send frame to next hop */
-                            if (arp_entry){
-                                printf("There is a match in the ARP cache\n");
-                                memcpy(eth_hdr->ether_shost, out_iface->addr, sizeof(uint8_t)*ETHER_ADDR_LEN);
-                                memcpy(eth_hdr->ether_dhost, arp_entry->mac, sizeof(unsigned char)*ETHER_ADDR_LEN);
-                                sr_send_packet (sr, packet, len, out_iface->name); 
-                                return;
 
-                            } else {
-                                printf("There is no match in our ARP cache\n");
-                                /* If there is no match in our ARP cache, send ARP request. */
-                                struct sr_arpreq * req = sr_arpcache_queuereq(sr_cache, ip_hdr->ip_dst, packet, len, out_iface->name);
-                                handle_arpreq(req, sr);
-                                return;
-                            }
-                        }
                     } else if (ip_p == ip_protocol_tcp) {
-
                         sr_tcp_hdr_t *tcp_hdr = (sr_tcp_hdr_t *) (packet + sizeof (sr_ethernet_hdr_t) + sizeof(sr_tcp_hdr_t)); 
                         struct sr_nat_mapping *nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src, ntohs(tcp_hdr->src_port), nat_mapping_tcp);
                         if (nat_lookup == NULL) {
@@ -335,45 +329,39 @@ void sr_iphandler (struct sr_instance* sr,
 
                         ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
                         tcp_hdr->tcp_sum = tcp_cksum(ip_hdr, tcp_hdr, len);
-
-                        /* check routing table, and perform LPM */ 
-                        /* Look up routing table for the rt entry that is mapped to the destination of received packet */
-                        if (dst_lpm) {
-                            struct sr_if *out_iface = sr_get_interface(sr, dst_lpm->interface);
-                            /* If there is a match, check ARP cache */
-                            struct sr_arpentry * arp_entry = sr_arpcache_lookup (sr_cache, dst_lpm->gw.s_addr); 
-                            /* If there is a match in our ARP cache, send frame to next hop */
-                            if (arp_entry){
-                                printf("There is a match in the ARP cache\n");
-                                memcpy(eth_hdr->ether_shost, out_iface->addr, sizeof(uint8_t)*ETHER_ADDR_LEN);
-                                memcpy(eth_hdr->ether_dhost, arp_entry->mac, sizeof(unsigned char)*ETHER_ADDR_LEN);
-                                sr_send_packet (sr, packet, len, out_iface->name); 
-                                return;
-
-                            } else {
-                                printf("There is no match in our ARP cache\n");
-                                /* If there is no match in our ARP cache, send ARP request. */
-                                struct sr_arpreq * req = sr_arpcache_queuereq(sr_cache, ip_hdr->ip_dst, packet, len, out_iface->name);
-                                handle_arpreq(req, sr);
-                                return;
-                            }
-                        }
                     } else {
                         printf("Packet of unknown type \n");
                     }
-                }
-            } else {
-                /* Filter: External or Fake Internal*/                
-                if (target_iface == NULL) {
-                    /* Filter: External*/
-                    if (!sr_nat_is_interface_internal(dst_lpm->interface)) {
-                        /* Look up routing table for the rt entry that is mapped to the destination of received packet */
-                        printf("It is not for an internal interface or router. Dropping the packet \n"); 
-                        return; 
+
+                    /* check routing table, and perform LPM */ 
+                    /* Look up routing table for the rt entry that is mapped to the destination of received packet */
+                    if (dst_lpm) {
+                        struct sr_if *out_iface = sr_get_interface(sr, dst_lpm->interface);
+                        /* If there is a match, check ARP cache */
+                        struct sr_arpentry * arp_entry = sr_arpcache_lookup (sr_cache, dst_lpm->gw.s_addr); 
+                        /* If there is a match in our ARP cache, send frame to next hop */
+                        if (arp_entry){
+                            printf("There is a match in the ARP cache\n");
+                            memcpy(eth_hdr->ether_shost, out_iface->addr, sizeof(uint8_t)*ETHER_ADDR_LEN);
+                            memcpy(eth_hdr->ether_dhost, arp_entry->mac, sizeof(unsigned char)*ETHER_ADDR_LEN);
+                            sr_send_packet (sr, packet, len, out_iface->name); 
+                            return;
+
+                        } else {
+                            printf("There is no match in our ARP cache\n");
+                            /* If there is no match in our ARP cache, send ARP request. */
+                            struct sr_arpreq * req = sr_arpcache_queuereq(sr_cache, ip_hdr->ip_dst, packet, len, out_iface->name);
+                            handle_arpreq(req, sr);
+                            return;
+                        }
                     }
-                } else {
+                }
+            } else {          
+                if (target_iface) {
                     if (ip_p == ip_protocol_icmp) {
                         printf("(EX->IN) ICMP\n");
+                        /* Get ICMP header */
+                        sr_icmp_hdr_t *icmp_hdr = get_icmp_hdr (packet);
 
                         struct sr_nat_mapping *nat_lookup = sr_nat_lookup_external(&(sr->nat), icmp_hdr->icmp_aux_identifier, nat_mapping_icmp); 
 		                if (nat_lookup != NULL) {
@@ -384,28 +372,7 @@ void sr_iphandler (struct sr_instance* sr,
 
                                 ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
                                 icmp_hdr->icmp_sum = cksum(icmp_hdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
-                                print_hdrs (packet, len);
-                                struct sr_rt *dst_lpm = sr_routing_lpm (sr, ip_hdr->ip_dst);
-				                if (dst_lpm) {
-                                    struct sr_if *out_iface = sr_get_interface(sr, dst_lpm->interface);
-                                    /* If there is a match, check ARP cache */
-                                    struct sr_arpentry * arp_entry = sr_arpcache_lookup (sr_cache, dst_lpm->gw.s_addr); 
-                                    /* If there is a match in our ARP cache, send frame to next hop */
-                                    if (arp_entry){
-                                        printf("There is a match in the ARP cache\n");
-                                        memcpy(eth_hdr->ether_shost, out_iface->addr, sizeof(uint8_t)*ETHER_ADDR_LEN);
-                                        memcpy(eth_hdr->ether_dhost, arp_entry->mac, sizeof(unsigned char)*ETHER_ADDR_LEN);
-                                        sr_send_packet (sr, packet, len, out_iface->name); 
-                                        return;
-
-                                    } else {
-                                        printf("There is no match in our ARP cache\n");
-                                        /* If there is no match in our ARP cache, send ARP request. */
-                                        struct sr_arpreq * req = sr_arpcache_queuereq(sr_cache, ip_hdr->ip_dst, packet, len, out_iface->name);
-                                        handle_arpreq(req, sr);
-                                        return;
-                                    }
-                                }             
+                                print_hdrs (packet, len);            
                             }
                         } else {
                             printf ("Got here");
@@ -457,28 +424,35 @@ void sr_iphandler (struct sr_instance* sr,
 
                         ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
                         tcp_hdr->tcp_sum = tcp_cksum(ip_hdr, tcp_hdr, len);
-                        struct sr_rt *dst_lpm = sr_routing_lpm (sr, ip_hdr->ip_dst);
+                    
+                    }
 
-                        if (dst_lpm) {
-                            struct sr_if *out_iface = sr_get_interface(sr, dst_lpm->interface);
-                            /* If there is a match, check ARP cache */
-                            struct sr_arpentry * arp_entry = sr_arpcache_lookup (sr_cache, dst_lpm->gw.s_addr); 
-                            /* If there is a match in our ARP cache, send frame to next hop */
-                            if (arp_entry){
-                                printf("There is a match in the ARP cache\n");
-                                memcpy(eth_hdr->ether_shost, out_iface->addr, sizeof(uint8_t)*ETHER_ADDR_LEN);
-                                memcpy(eth_hdr->ether_dhost, arp_entry->mac, sizeof(unsigned char)*ETHER_ADDR_LEN);
-                                sr_send_packet (sr, packet, len, out_iface->name); 
-                                return;
+                    struct sr_rt *dst_lpm = sr_routing_lpm (sr, ip_hdr->ip_dst);
+                    if (dst_lpm) {
+                        struct sr_if *out_iface = sr_get_interface(sr, dst_lpm->interface);
+                        /* If there is a match, check ARP cache */
+                        struct sr_arpentry * arp_entry = sr_arpcache_lookup (sr_cache, dst_lpm->gw.s_addr); 
+                        /* If there is a match in our ARP cache, send frame to next hop */
+                        if (arp_entry){
+                            printf("There is a match in the ARP cache\n");
+                            memcpy(eth_hdr->ether_shost, out_iface->addr, sizeof(uint8_t)*ETHER_ADDR_LEN);
+                            memcpy(eth_hdr->ether_dhost, arp_entry->mac, sizeof(unsigned char)*ETHER_ADDR_LEN);
+                            sr_send_packet (sr, packet, len, out_iface->name); 
+                            return;
 
-                            } else {
-                                printf("There is no match in our ARP cache\n");
-                                /* If there is no match in our ARP cache, send ARP request. */
-                                struct sr_arpreq * req = sr_arpcache_queuereq(sr_cache, ip_hdr->ip_dst, packet, len, out_iface->name);
-                                handle_arpreq(req, sr);
-                                return;
-                            }
-                        }     
+                        } else {
+                            printf("There is no match in our ARP cache\n");
+                            /* If there is no match in our ARP cache, send ARP request. */
+                            struct sr_arpreq * req = sr_arpcache_queuereq(sr_cache, ip_hdr->ip_dst, packet, len, out_iface->name);
+                            handle_arpreq(req, sr);
+                            return;
+                        }
+                    } 
+                } else {
+                    if (!sr_nat_is_interface_internal(dst_lpm->interface)) {
+                        /* Look up routing table for the rt entry that is mapped to the destination of received packet */
+                        printf("It is not for an internal interface or router. Dropping the packet \n"); 
+                        return; 
                     }
                 }
             }
