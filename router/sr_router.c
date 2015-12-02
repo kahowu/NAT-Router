@@ -262,10 +262,22 @@ void sr_iphandler (struct sr_instance* sr,
                         printf("Protocol is ICMP\n");
                         struct sr_nat_mapping *nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_aux_identifier, nat_mapping_icmp);
                         if (nat_lookup == NULL) {
-                            nat_lookup = sr_nat_insert_mapping(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_aux_identifier, nat_mapping_icmp);
-                            nat_lookup->ip_ext = sr_get_interface(sr, dst_lpm->interface)->ip;
+                            nat_lookup = sr_nat_insert_mapping(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_aux_identifier, nat_mapping_icmp); 
+			   
+			    nat_lookup->ip_ext = sr_get_interface(sr, dst_lpm->interface)->ip;
                             nat_lookup->aux_ext = sr_nat_generate_icmp_identifier(&(sr->nat));
-                        }
+			    struct sr_nat *test_nat = &(sr->nat);
+			    struct sr_nat_mapping *curr_mapping = test_nat->mappings;
+/*			   
+			 printf ("###########\n");
+			    assert (curr_mapping != NULL);
+			    printf ("YO\n");
+			    print_nat_mapping (curr_mapping);
+                            print_nat_table (& (sr->nat));
+                            printf ("###########\n");*/
+                            assert (curr_mapping != NULL);
+			}
+
 
                         nat_lookup->last_updated = time(NULL);
                         icmp_hdr->icmp_aux_identifier = nat_lookup->aux_ext;
@@ -359,12 +371,14 @@ void sr_iphandler (struct sr_instance* sr,
             } else {          
                 if (target_iface) {
                     if (ip_p == ip_protocol_icmp) {
-                        printf("(EX->IN) ICMP\n");
+                        printf("[NAT](EX->IN) ICMP\n");
                         /* Get ICMP header */
                         sr_icmp_hdr_t *icmp_hdr = get_icmp_hdr (packet);
-
+			print_hdrs (packet, len);	
                         struct sr_nat_mapping *nat_lookup = sr_nat_lookup_external(&(sr->nat), icmp_hdr->icmp_aux_identifier, nat_mapping_icmp); 
-		                if (nat_lookup != NULL) {
+		  
+			/*print_hdrs (packet, len);*/
+			if (nat_lookup != NULL) {
                             if (is_icmp_echo_reply(icmp_hdr)) {
                                 ip_hdr->ip_dst = nat_lookup->ip_int;
                                 icmp_hdr->icmp_aux_identifier= nat_lookup->aux_int;
@@ -372,10 +386,10 @@ void sr_iphandler (struct sr_instance* sr,
 
                                 ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
                                 icmp_hdr->icmp_sum = cksum(icmp_hdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
-                                print_hdrs (packet, len);            
+                             
                             }
                         } else {
-                            printf ("Got here");
+                            printf ("[NAT] nat mapping does not exist. Dropping the packet \n");
                             return; 
                         }
                     } else if (ip_p == ip_protocol_tcp) {

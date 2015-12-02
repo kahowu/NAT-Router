@@ -30,10 +30,9 @@ int sr_nat_init(struct sr_nat *nat) { /* Initializes the nat */
 
   nat->mappings = NULL;
   /* Initialize any variables here */
-
+ /* struct sr_nat_mapping *head;*/ 
   return success;
 }
-
 
 int sr_nat_destroy(struct sr_nat *nat) {  /* Destroys the nat (free memory) */
 
@@ -67,7 +66,7 @@ void *sr_nat_timeout(void *nat_ptr) {  /* Periodic Timout handling */
 struct sr_nat_mapping *sr_nat_lookup_external(struct sr_nat *nat,
     uint16_t aux_ext, sr_nat_mapping_type type ) {
 
-  printf  ("NAT lookup given external port \n"); 
+  printf  ("NAT lookup given external port \n");
   pthread_mutex_lock(&(nat->lock));
 
   /* handle lookup here, malloc and assign to copy */
@@ -75,6 +74,7 @@ struct sr_nat_mapping *sr_nat_lookup_external(struct sr_nat *nat,
   curr_mapping = nat->mappings;
 
   while (curr_mapping != NULL) {
+    printf ("[NAT] iterating over the NAT table... \n");   
     if (curr_mapping->type == type && curr_mapping->aux_ext == aux_ext) {
       target_mapping = curr_mapping;
       break;
@@ -83,7 +83,6 @@ struct sr_nat_mapping *sr_nat_lookup_external(struct sr_nat *nat,
   }
 
   pthread_mutex_unlock(&(nat->lock));
-  print_nat_mapping (target_mapping);
   return target_mapping;
 
 }
@@ -136,21 +135,30 @@ struct sr_nat_mapping *sr_nat_insert_mapping(struct sr_nat *nat,
   uint32_t ip_int, uint16_t aux_int, sr_nat_mapping_type type ) {
 
   pthread_mutex_lock(&(nat->lock));
-
+  
   /* handle insert here, create a mapping, and then return a copy of it */
   struct sr_nat_mapping *new_mapping = malloc(sizeof(struct sr_nat_mapping)); 
-  assert(new_mapping != NULL);
 
   new_mapping->type = type;
   new_mapping->last_updated = time(NULL);
   new_mapping->ip_int = ip_int;
   new_mapping->aux_int = aux_int;
   new_mapping->conns = NULL;
-
+  new_mapping->prev = NULL;
+  new_mapping->next = NULL; 
   struct sr_nat_mapping *curr_mapping = nat->mappings;
-  nat->mappings = new_mapping;
-  new_mapping->next = curr_mapping;
-
+/*  nat->mappings = new_mapping;
+  new_mapping->next = curr_mapping;*/
+  assert (new_mapping != NULL);
+  if (curr_mapping == NULL) {
+	printf ("[NAT] inserting new mapping \n");
+	nat->mappings = new_mapping; 
+  } else {
+	printf("[NAT] appending to mapping table \n");
+        curr_mapping->prev = new_mapping; 
+        new_mapping->next = curr_mapping;
+        nat->mappings = new_mapping;
+  }
   pthread_mutex_unlock(&(nat->lock));
   return new_mapping;
 }

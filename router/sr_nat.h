@@ -54,6 +54,7 @@ struct sr_nat_mapping {
   uint16_t aux_ext; /* external port or icmp id */
   time_t last_updated; /* use to timeout mappings */
   struct sr_nat_connection *conns; /* list of connections. null for ICMP */
+  struct sr_nat_mapping *prev;
   struct sr_nat_mapping *next;
 };
 

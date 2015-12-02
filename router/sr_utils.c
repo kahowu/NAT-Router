@@ -4,7 +4,7 @@
 #include "sr_protocol.h"
 #include "sr_utils.h"
 #include "sr_nat.h"
-
+#include <assert.h>
 uint16_t cksum (const void *_data, int len) {
   const uint8_t *data = _data;
   uint32_t sum;
@@ -39,6 +39,18 @@ void print_nat_mapping (struct sr_nat_mapping* nat_mapping) {
   print_addr_ip_int(nat_mapping->aux_ext);
   return; 
 }
+
+void print_nat_table (struct sr_nat *nat) {
+	struct sr_nat_mapping *curr_mapping = nat->mappings;
+	assert (curr_mapping != NULL);
+	while (!curr_mapping) {
+		print_nat_mapping (curr_mapping);
+		curr_mapping = curr_mapping->next;  
+	}
+	return;	
+
+}
+
 
 uint32_t tcp_cksum(sr_ip_hdr_t *ip_hdr, sr_tcp_hdr_t *tcp_hdr, int total_len) {
 
