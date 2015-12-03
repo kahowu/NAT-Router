@@ -81,7 +81,8 @@ int main(int argc, char **argv)
 
     printf("Using %s\n", VERSION_INFO);
 
-    while ((c = getopt(argc, argv, "hs:v:p:u:t:r:l:T:n:I:E:R")) != EOF)
+    /*while ((c = getopt(argc, argv, "hs:v:p:u:t:r:l:T:n:I:E:R")) != EOF) */
+    while ((c = getopt(argc, argv, "hs:v:p:u:t:r:l:T:I:E:R:n")) != EOF)
     {
         switch (c)
         {
@@ -130,9 +131,7 @@ int main(int argc, char **argv)
 
     /* -- zero out sr instance -- */
     sr_init_instance(&sr);
-
-    struct sr_nat nat;
-
+   /* struct sr_nat nat;
     if (nat_mode) {
         nat.icmp_query_timeout = icmp_query_timeout;
         nat.tcp_estb_timeout = tcp_estb_timeout;
@@ -140,8 +139,26 @@ int main(int argc, char **argv)
     }
 
     sr.nat_mode = nat_mode;
-    sr.nat = nat;
-
+    sr.nat = nat;*/
+    
+    if (nat_mode) {
+        sr.nat.icmp_query_timeout = icmp_query_timeout;
+        sr.nat.tcp_estb_timeout = tcp_estb_timeout;
+        sr.nat.tcp_trns_timeout = tcp_trns_timeout;
+        sr.nat_mode = nat_mode;
+    }
+/*
+       
+    if (nat_mode) {
+        struct sr_nat *nat;
+        nat = malloc(sizeof (struct sr_nat));
+        nat->icmp_query_timeout = icmp_query_timeout;
+        nat->tcp_estb_timeout = tcp_estb_timeout;
+        nat->tcp_trns_timeout = tcp_trns_timeout;
+        sr.nat_mode = nat_mode;
+        sr.nat = *nat;
+    }
+*/
     /* -- set up routing table from file -- */
     if(template == NULL) {
         sr.template[0] = '\0';
