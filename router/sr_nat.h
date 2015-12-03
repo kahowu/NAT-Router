@@ -109,4 +109,8 @@ struct sr_nat_connection *sr_nat_insert_tcp_connection (struct sr_nat_mapping *m
 
 int sr_nat_generate_tcp_port(struct sr_nat *nat);
 
+void sr_nat_destroy_mapping (struct sr_nat *nat, struct sr_nat_mapping *curr_mapping);
+
+void destroy_tcp_conn(struct sr_nat_mapping *mapping, struct sr_nat_connection *conn);
+
 #endif

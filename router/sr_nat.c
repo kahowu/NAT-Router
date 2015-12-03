@@ -47,18 +47,66 @@ int sr_nat_destroy(struct sr_nat *nat) {  /* Destroys the nat (free memory) */
 }
 
 void *sr_nat_timeout(void *nat_ptr) {  /* Periodic Timout handling */
-  struct sr_nat *nat = (struct sr_nat *)nat_ptr;
-  while (1) {
-    sleep(1.0);
-    pthread_mutex_lock(&(nat->lock));
+    struct sr_nat *nat = (struct sr_nat *)nat_ptr;
+    while (1) {
+        sleep(1.0);
+        pthread_mutex_lock(&(nat->lock));
 
-    time_t curtime = time(NULL);
+        time_t curtime = time(NULL);
 
-    /* handle periodic tasks here */
+        struct sr_nat_mapping *curr_mapping = nat->mappings;
+        /* handle periodic tasks here */
+        while (curr_mapping != NULL) {
+            if (curr_mapping->type == nat_mapping_icmp) {
+                printf ("[NAT] Checking timeout for ICMP... \n"); 
+                if (difftime (curtime, curr_mapping->last_updated) > nat->icmp_query_timeout) {
+                    sr_nat_destroy_mapping (nat, curr_mapping);
+                    break; 
+                }
+            } else if (curr_mapping->type == nat_mapping_tcp) {
+                printf ("[NAT] Checking timeout for TCP... \n"); 
+                struct sr_nat_connection *curr_connection, *next_connection;
+                curr_connection = curr_mapping->conns;
+                while (curr_connection != NULL) {
+                    next_connection = curr_connection->next;
+                    if (curr_connection->tcp_state == ESTABLISHED) {
+                        if (difftime(curtime, curr_connection->last_updated) > nat->tcp_estb_timeout) {
+                            destroy_tcp_conn(curr_mapping, curr_connection);
+                        }
+                    } else {
+                        if (difftime(curtime, curr_connection->last_updated) > nat->tcp_trns_timeout) {
+                            destroy_tcp_conn(curr_mapping, curr_connection);
+                        }
+                    }
+                    curr_connection = next_connection;
+                }
+                if (curr_mapping->conns == NULL && difftime(curtime, curr_mapping->last_updated) > 0.5) {
+                     sr_nat_destroy_mapping(nat, curr_mapping);
+                     break;
+                }
+            }
+            curr_mapping = curr_mapping->next;
+        }
+        pthread_mutex_unlock(&(nat->lock));
+    }
+    return NULL;
+}
 
-    pthread_mutex_unlock(&(nat->lock));
-  }
-  return NULL;
+
+void destroy_tcp_conn(struct sr_nat_mapping *mapping, struct sr_nat_connection *conn) {
+  printf("[NAT] Destroying TCP connection\n");
+  struct sr_nat_connection *prevConn = mapping->conns;
+
+    if (prevConn != NULL) {
+        if (prevConn == conn) {
+            mapping->conns = conn->next;
+        } else {
+            for (; prevConn->next != NULL && prevConn->next != conn; prevConn = prevConn->next) {}
+            if (prevConn == NULL) { return; }
+            prevConn->next = conn->next;
+        }
+        free(conn);
+    }
 }
 
 /* Get the mapping associated with given external port.
@@ -151,13 +199,13 @@ struct sr_nat_mapping *sr_nat_insert_mapping(struct sr_nat *nat,
   new_mapping->next = curr_mapping;*/
   assert (new_mapping != NULL);
   if (curr_mapping == NULL) {
-	printf ("[NAT] inserting new mapping \n");
-	nat->mappings = new_mapping; 
+  	printf ("[NAT] inserting new mapping \n");
+  	nat->mappings = new_mapping; 
   } else {
-	printf("[NAT] appending to mapping table \n");
-        curr_mapping->prev = new_mapping; 
-        new_mapping->next = curr_mapping;
-        nat->mappings = new_mapping;
+	  printf("[NAT] appending to mapping table \n");
+    curr_mapping->prev = new_mapping; 
+    new_mapping->next = curr_mapping;
+    nat->mappings = new_mapping;
   }
   pthread_mutex_unlock(&(nat->lock));
   return new_mapping;
@@ -221,6 +269,46 @@ struct sr_nat_connection *sr_nat_insert_tcp_connection (struct sr_nat_mapping *m
     new_connection->next = curr_connection;
 
     return new_connection;
+}
+
+/* Destroy nat mapping */
+void sr_nat_destroy_mapping (struct sr_nat *nat, struct sr_nat_mapping *target_mapping) {
+    struct sr_nat_mapping *prev_mapping, *next_mapping = NULL;
+
+    /* Only item of the list */
+    if (target_mapping->prev == NULL && target_mapping->next == NULL) {
+        free (target_mapping);
+        nat->mappings = NULL;
+        return;
+    }
+
+    /* Head of the list */
+    if (target_mapping->prev == NULL) {
+        next_mapping = target_mapping->next;
+        next_mapping->prev = NULL;
+        free (target_mapping); 
+        nat->mappings = next_mapping;
+        return;
+    }
+
+    /* Tail of the list */
+    if (target_mapping->next == NULL) {
+        prev_mapping = target_mapping->prev; 
+        prev_mapping->next = NULL; 
+        free (target_mapping);
+        return;
+    }
+
+    /* Somewhere in the list */
+    if (target_mapping->prev != NULL && target_mapping->next != NULL) {
+        prev_mapping = target_mapping->prev; 
+        next_mapping = target_mapping->next; 
+        prev_mapping->next = next_mapping; 
+        free (target_mapping); 
+        return;
+    }
+
+    return;  
 }
 
 /* Check to see if given interface is a NAT internal interface "eth1" */
