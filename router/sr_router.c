@@ -418,6 +418,9 @@ void sr_iphandler (struct sr_instance* sr,
                 if (target_iface) {
                     if (ip_p == ip_protocol_icmp) {
                         printf("[NAT](EX->IN) ICMP\n");
+                        
+                        /* Get ICMP header */
+                        sr_icmp_hdr_t *icmp_hdr = get_icmp_hdr (packet);
 
                         /* Check for mininum length  */
                         if (check_min_len (len, ICMP_PACKET)) {
@@ -431,8 +434,6 @@ void sr_iphandler (struct sr_instance* sr,
                             return;
                         } 
 
-                        /* Get ICMP header */
-                        sr_icmp_hdr_t *icmp_hdr = get_icmp_hdr (packet);
                         struct sr_nat_mapping *nat_lookup = sr_nat_lookup_external(&(sr->nat), icmp_hdr->icmp_aux_identifier, nat_mapping_icmp); 
 		
 			            if (nat_lookup != NULL) {
@@ -822,7 +823,7 @@ void route_packet (struct sr_instance* sr,
                 return;
             } 
 
-            if (is_icmp_echo_request (icmp_hdr)) {
+    if (is_icmp_echo_request (icmp_hdr)) {
                 send_echo_reply (sr, packet, len, interface);
                 return;
             } else {
