@@ -51,6 +51,15 @@ void print_nat_table (struct sr_nat *nat) {
 
 }
 
+uint32_t ip_cksum (sr_ip_hdr_t *ipHdr, int len) {
+    uint16_t currChksum, calcChksum;
+    currChksum = ipHdr->ip_sum; 
+    ipHdr->ip_sum = 0;
+    calcChksum = cksum(ipHdr, len);
+    ipHdr->ip_sum = currChksum;    
+
+    return calcChksum;
+}
 
 uint32_t tcp_cksum(sr_ip_hdr_t *ip_hdr, sr_tcp_hdr_t *tcp_hdr, int total_len) {
 

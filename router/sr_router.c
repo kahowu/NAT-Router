@@ -316,15 +316,15 @@ void sr_iphandler (struct sr_instance* sr,
                             return;
                         } 
 
-                        struct sr_nat_mapping *nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_aux_identifier, nat_mapping_icmp);
+                        struct sr_nat_mapping *nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_id, nat_mapping_icmp);
                         if (nat_lookup == NULL) {
-                            nat_lookup = sr_nat_insert_mapping(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_aux_identifier, nat_mapping_icmp); 
+                            nat_lookup = sr_nat_insert_mapping(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_id, nat_mapping_icmp); 
 			                nat_lookup->ip_ext = sr_get_interface(sr, dst_lpm->interface)->ip;
                             nat_lookup->aux_ext = sr_nat_generate_icmp_identifier(&(sr->nat));
 			            }
 
                         nat_lookup->last_updated = time(NULL);
-                        icmp_hdr->icmp_aux_identifier = nat_lookup->aux_ext;
+                        icmp_hdr->icmp_id = nat_lookup->aux_ext;
                         ip_hdr->ip_src = nat_lookup->ip_ext;
                         ip_hdr->ip_sum = 0;
                         icmp_hdr->icmp_sum = 0;
@@ -434,12 +434,12 @@ void sr_iphandler (struct sr_instance* sr,
                             return;
                         } 
 
-                        struct sr_nat_mapping *nat_lookup = sr_nat_lookup_external(&(sr->nat), icmp_hdr->icmp_aux_identifier, nat_mapping_icmp); 
+                        struct sr_nat_mapping *nat_lookup = sr_nat_lookup_external(&(sr->nat), icmp_hdr->icmp_id, nat_mapping_icmp); 
 		
 			            if (nat_lookup != NULL) {
                             if (is_icmp_echo_reply(icmp_hdr)) {
                                 ip_hdr->ip_dst = nat_lookup->ip_int;
-                                icmp_hdr->icmp_aux_identifier= nat_lookup->aux_int;
+                                icmp_hdr->icmp_id= nat_lookup->aux_int;
                                 nat_lookup->last_updated = time(NULL);
 
                                 ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
@@ -585,7 +585,6 @@ int decrement_and_recalculate (sr_ip_hdr_t *ip_hdr) {
     if (ip_hdr->ip_ttl <= 1){
         return 1;
     } else {
-        ip_hdr->ip_ttl = ip_hdr->ip_ttl - 1;
         memset(&(ip_hdr->ip_sum), 0, sizeof(uint16_t));
         ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
     }
