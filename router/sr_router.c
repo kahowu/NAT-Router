@@ -44,7 +44,7 @@ void sr_init(struct sr_instance* sr)
 
     /* NAT */
     if (sr->nat_mode) {
-         printf ("Nat is enabled \n");
+         printf ("Nat is enabled... \n");
    	 sr_nat_init(&(sr->nat));
     }
     pthread_attr_init(&(sr->attr));
@@ -195,6 +195,35 @@ void sr_iphandler (struct sr_instance* sr,
         return;
     } 
 
+    /* If time exceeded, send out time exceeded message */
+    if (decrement_and_recalculate (ip_hdr)){
+        printf("TTL of IP is 0. Time exceeded. \n");
+        int packet_len = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t11_hdr_t);
+        uint8_t *new_packet = malloc(packet_len);
+
+        /* Create ethernet header */
+        create_ethernet_header (eth_hdr, new_packet, sr_get_interface(sr, interface)->addr, eth_hdr->ether_shost, htons(ethertype_ip)); 
+
+        /* Create IP header */
+        create_ip_header (ip_hdr, new_packet, sr_get_interface(sr, interface)->ip, ip_hdr->ip_src); 
+
+        /* Create ICMP Header */
+        create_icmp_type3_header (ip_hdr, new_packet, time_exceeded_type, time_exceeded_code); 
+
+        /* Send time exceeded ICMP packet */
+        struct sr_arpentry * arp_entry = sr_arpcache_lookup (sr_cache, ip_hdr->ip_src);
+        if (arp_entry) {
+            sr_send_packet (sr, new_packet, packet_len, interface);
+        } else {
+            struct sr_arpreq * req = sr_arpcache_queuereq(sr_cache, ip_hdr->ip_src, new_packet, packet_len, interface);
+            handle_arpreq(req, sr);
+        }
+
+        free (new_packet);
+
+        return;
+    }
+
     /* If there is no match in routing table and the packet is not for one of the interfaces, send ICMP net unreachable */
     if (target_iface == NULL && dst_lpm == NULL) {
         int packet_len = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t3_hdr_t);
@@ -226,6 +255,18 @@ void sr_iphandler (struct sr_instance* sr,
                     sr_icmp_hdr_t *icmp_hdr = get_icmp_hdr (packet);
 
                     if (ip_p == ip_protocol_icmp) {
+                        /* Check for mininum length  */
+                        if (check_min_len (len, ICMP_PACKET)) {
+                            printf("IP packet does not satisfy mininum length requirement \n");
+                            return;
+                        }
+
+                        /* Check ICMP checksum */
+                        if (verify_icmp_checksum (icmp_hdr, ICMP_PACKET, len)) {
+                            printf("ICMP packet fails checksum \n");
+                            return;
+                        } 
+
                         if (is_icmp_echo_request (icmp_hdr)) {
                             send_echo_reply (sr, packet, len, interface);
                         } else {
@@ -251,33 +292,36 @@ void sr_iphandler (struct sr_instance* sr,
 
                         free(new_packet);
                         return; 
+                    } else {
+                        printf("Received ICMP packet of unknown type\n");
+                        return; 
                     }
 
                 /* Packet is for the external interface */
                 } else {
                     if (ip_p == ip_protocol_icmp) {
+                        printf("Protocol is ICMP\n");
                         /* Get ICMP header */
                         sr_icmp_hdr_t *icmp_hdr = get_icmp_hdr (packet);
 
-                        printf("Protocol is ICMP\n");
+                         /* Check for mininum length  */
+                        if (check_min_len (len, ICMP_PACKET)) {
+                            printf("IP packet does not satisfy mininum length requirement \n");
+                            return;
+                        }
+
+                        /* Check ICMP checksum */
+                        if (verify_icmp_checksum (icmp_hdr, ICMP_PACKET, len)) {
+                            printf("ICMP packet fails checksum \n");
+                            return;
+                        } 
+
                         struct sr_nat_mapping *nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_aux_identifier, nat_mapping_icmp);
                         if (nat_lookup == NULL) {
                             nat_lookup = sr_nat_insert_mapping(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_aux_identifier, nat_mapping_icmp); 
-			   
-			    nat_lookup->ip_ext = sr_get_interface(sr, dst_lpm->interface)->ip;
+			                nat_lookup->ip_ext = sr_get_interface(sr, dst_lpm->interface)->ip;
                             nat_lookup->aux_ext = sr_nat_generate_icmp_identifier(&(sr->nat));
-			    struct sr_nat *test_nat = &(sr->nat);
-			    struct sr_nat_mapping *curr_mapping = test_nat->mappings;
-/*			   
-			 printf ("###########\n");
-			    assert (curr_mapping != NULL);
-			    printf ("YO\n");
-			    print_nat_mapping (curr_mapping);
-                            print_nat_table (& (sr->nat));
-                            printf ("###########\n");*/
-                            assert (curr_mapping != NULL);
-			}
-
+			            }
 
                         nat_lookup->last_updated = time(NULL);
                         icmp_hdr->icmp_aux_identifier = nat_lookup->aux_ext;
@@ -339,10 +383,12 @@ void sr_iphandler (struct sr_instance* sr,
                         ip_hdr->ip_src = nat_lookup->ip_ext;
                         tcp_hdr->src_port = htons(nat_lookup->aux_ext);
 
+                        ip_hdr->ip_sum = 0;
                         ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
                         tcp_hdr->tcp_sum = tcp_cksum(ip_hdr, tcp_hdr, len);
                     } else {
                         printf("Packet of unknown type \n");
+                        return;
                     }
 
                     /* check routing table, and perform LPM */ 
@@ -372,13 +418,24 @@ void sr_iphandler (struct sr_instance* sr,
                 if (target_iface) {
                     if (ip_p == ip_protocol_icmp) {
                         printf("[NAT](EX->IN) ICMP\n");
+
+                        /* Check for mininum length  */
+                        if (check_min_len (len, ICMP_PACKET)) {
+                            printf("IP packet does not satisfy mininum length requirement \n");
+                            return;
+                        }
+
+                        /* Check ICMP checksum */
+                        if (verify_icmp_checksum (icmp_hdr, ICMP_PACKET, len)) {
+                            printf("ICMP packet fails checksum \n");
+                            return;
+                        } 
+
                         /* Get ICMP header */
                         sr_icmp_hdr_t *icmp_hdr = get_icmp_hdr (packet);
-			print_hdrs (packet, len);	
                         struct sr_nat_mapping *nat_lookup = sr_nat_lookup_external(&(sr->nat), icmp_hdr->icmp_aux_identifier, nat_mapping_icmp); 
-		  
-			/*print_hdrs (packet, len);*/
-			if (nat_lookup != NULL) {
+		
+			            if (nat_lookup != NULL) {
                             if (is_icmp_echo_reply(icmp_hdr)) {
                                 ip_hdr->ip_dst = nat_lookup->ip_int;
                                 icmp_hdr->icmp_aux_identifier= nat_lookup->aux_int;
@@ -747,66 +804,13 @@ void route_packet (struct sr_instance* sr,
     /* ARP Cache */
     struct sr_arpcache *sr_cache = &sr->cache;
 
-    /* If time exceeded, send out time exceeded message */
-    if (decrement_and_recalculate (ip_hdr)){
-        printf("TTL of IP is 0. Time exceeded. \n");
-        int packet_len = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t11_hdr_t);
-        uint8_t *new_packet = malloc(packet_len);
-
-        /* Create ethernet header */
-        create_ethernet_header (eth_hdr, new_packet, sr_get_interface(sr, interface)->addr, eth_hdr->ether_shost, htons(ethertype_ip)); 
-
-        /* Create IP header 
-        create_ip_header (ip_hdr, new_packet, sr_get_interface(sr, interface)->ip, ip_hdr->ip_src); */
-
-        /* Create ICMP Header 
-        create_icmp_type3_header (ip_hdr, new_packet, time_exceeded_type, time_exceeded_code); */
-
-        /* Make IP header */
-        sr_ip_hdr_t *new_ip_hdr = (sr_ip_hdr_t *)(new_packet + sizeof(sr_ethernet_hdr_t));
-        new_ip_hdr->ip_v = 4;
-        new_ip_hdr->ip_hl = sizeof(sr_ip_hdr_t)/4;
-        new_ip_hdr->ip_tos = 0;
-        new_ip_hdr->ip_len = htons(sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t11_hdr_t));
-        new_ip_hdr->ip_id = htons(0);
-        new_ip_hdr->ip_off = htons(IP_DF);
-        new_ip_hdr->ip_ttl = 64;
-        new_ip_hdr->ip_dst = ip_hdr->ip_src;
-        new_ip_hdr->ip_p = ip_protocol_icmp;
-        new_ip_hdr->ip_src = sr_get_interface(sr, interface)->ip;
-        new_ip_hdr->ip_sum = 0;
-        new_ip_hdr->ip_sum = cksum(new_ip_hdr, sizeof(sr_ip_hdr_t));
-
-        /* Make ICMP Header */
-        sr_icmp_t11_hdr_t *new_icmp_hdr = (sr_icmp_t11_hdr_t *)(new_packet + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
-        new_icmp_hdr->icmp_type = time_exceeded_type;
-        new_icmp_hdr->icmp_code = time_exceeded_code;
-        new_icmp_hdr->unused = 0;
-        new_icmp_hdr->icmp_sum = 0;
-        memcpy(new_icmp_hdr->data, ip_hdr, ICMP_DATA_SIZE);
-        new_icmp_hdr->icmp_sum = cksum(new_icmp_hdr, sizeof(sr_icmp_t11_hdr_t));
-
-        /* Send time exceeded ICMP packet */
-        struct sr_arpentry * arp_entry = sr_arpcache_lookup (sr_cache, ip_hdr->ip_src);
-        if (arp_entry) {
-            sr_send_packet (sr, new_packet, packet_len, interface);
-        } else {
-            struct sr_arpreq * req = sr_arpcache_queuereq(sr_cache, ip_hdr->ip_src, new_packet, packet_len, interface);
-            handle_arpreq(req, sr);
-        }
-
-        free (new_packet);
-
-        return;
-    }
-
     /* If target interface is not NULL, the packet is for one of the interfaces in our router */
     struct sr_if *target_iface = get_router_interface (ip_hdr->ip_dst, sr);
     if (target_iface) {
         uint8_t ip_p = ip_protocol((uint8_t *)ip_hdr); 
         /* Check if the ip protocol is of type ICMP */
         if (ip_p == ip_protocol_icmp) {
-            /* Check for mininum length for ICMP Packet */
+            /* Check for mininum length  */
             if (check_min_len (len, ICMP_PACKET)) {
                 printf("IP packet does not satisfy mininum length requirement \n");
                 return;
@@ -818,12 +822,11 @@ void route_packet (struct sr_instance* sr,
                 return;
             } 
 
-            /* If it's ICMP echo req, send echo reply */
-            if (icmp_hdr->icmp_type == icmp_echo_request) {
+            if (is_icmp_echo_request (icmp_hdr)) {
                 send_echo_reply (sr, packet, len, interface);
                 return;
             } else {
-                printf ("ICMP packet of unknown type\n");
+                printf("Unknown ICMP type \n");
                 return;
             }
         /* If it is TCP / UDP, send ICMP port unreachable */
