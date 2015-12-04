@@ -248,7 +248,6 @@ void sr_iphandler (struct sr_instance* sr,
     } else {
         if (sr->nat_mode) {
             if (sr_nat_is_interface_internal(interface)) {
-
                 /* Packet is for the router or the internal interface */
                 if (target_iface != NULL || sr_nat_is_interface_internal(dst_lpm->interface)) {
                     /* Get ICMP header */
@@ -268,7 +267,8 @@ void sr_iphandler (struct sr_instance* sr,
                         } 
 
                         if (is_icmp_echo_request (icmp_hdr)) {
-                            send_echo_reply (sr, packet, len, interface);
+                            printf ("Sending ICMP echo reply. \n");
+			    send_echo_reply (sr, packet, len, interface);
                         } else {
                             printf("Unknown ICMP type \n");
                             return;
@@ -303,7 +303,7 @@ void sr_iphandler (struct sr_instance* sr,
                         printf("Protocol is ICMP\n");
                         /* Get ICMP header */
                         sr_icmp_hdr_t *icmp_hdr = get_icmp_hdr (packet);
-
+			/*print_hdrs (packet, len);*/
                          /* Check for mininum length  */
                         if (check_min_len (len, ICMP_PACKET)) {
                             printf("IP packet does not satisfy mininum length requirement \n");
@@ -330,8 +330,12 @@ void sr_iphandler (struct sr_instance* sr,
                         icmp_hdr->icmp_sum = 0;
                         ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
                         icmp_hdr->icmp_sum = cksum(icmp_hdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
-
-                    } else if (ip_p == ip_protocol_tcp) {
+                   	
+		        printf ("IN->OUT \n"); 	
+			printf ("The icmp checksum is %d \n", icmp_hdr->icmp_sum);
+			printf ("The ip checksum is %d \n", ip_hdr->ip_sum);
+			printf ("IN->OUT \n");  
+		    } else if (ip_p == ip_protocol_tcp) {
                         sr_tcp_hdr_t *tcp_hdr = (sr_tcp_hdr_t *) (packet + sizeof (sr_ethernet_hdr_t) + sizeof(sr_tcp_hdr_t)); 
                         struct sr_nat_mapping *nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src, ntohs(tcp_hdr->src_port), nat_mapping_tcp);
                         if (nat_lookup == NULL) {
@@ -418,7 +422,7 @@ void sr_iphandler (struct sr_instance* sr,
                 if (target_iface) {
                     if (ip_p == ip_protocol_icmp) {
                         printf("[NAT](EX->IN) ICMP\n");
-                        
+			print_hdrs (packet, len);                        
                         /* Get ICMP header */
                         sr_icmp_hdr_t *icmp_hdr = get_icmp_hdr (packet);
 
@@ -441,11 +445,17 @@ void sr_iphandler (struct sr_instance* sr,
                                 ip_hdr->ip_dst = nat_lookup->ip_int;
                                 icmp_hdr->icmp_id= nat_lookup->aux_int;
                                 nat_lookup->last_updated = time(NULL);
-
+				icmp_hdr->icmp_sum = 0;
+   				ip_hdr->ip_sum = 0;
                                 ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
                                 icmp_hdr->icmp_sum = cksum(icmp_hdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
                              
                             }
+				 printf ("OUT->IN \n");  
+                        printf ("The icmp checksum is %d \n", icmp_hdr->icmp_sum);
+                        printf ("The ip checksum is %d \n", ip_hdr->ip_sum);
+                        printf ("OUT->IN \n");
+				
                         } else {
                             printf ("[NAT] nat mapping does not exist. Dropping the packet \n");
                             return; 
@@ -582,7 +592,9 @@ int verify_icmp_checksum (sr_icmp_hdr_t *icmp_hdr, int type, int len) {
 
 /* Decrement TTL and calculate new checksum */
 int decrement_and_recalculate (sr_ip_hdr_t *ip_hdr) { 
-    if (ip_hdr->ip_ttl <= 1){
+    printf ("Decrementing TTL now. Th current value is %d \n", ip_hdr->ip_ttl);
+    ip_hdr->ip_ttl--;
+    if (ip_hdr->ip_ttl <= 0){
         return 1;
     } else {
         memset(&(ip_hdr->ip_sum), 0, sizeof(uint16_t));

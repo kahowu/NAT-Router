@@ -94,6 +94,16 @@ uint32_t tcp_cksum(sr_ip_hdr_t *ip_hdr, sr_tcp_hdr_t *tcp_hdr, int total_len) {
   return calcCksum;
 }
 
+uint32_t icmp_cksum (sr_icmp_hdr_t *icmpHdr, int len) {
+    uint16_t currChksum, calcChksum;
+
+    currChksum = icmpHdr->icmp_sum; 
+    icmpHdr->icmp_sum = 0;
+    calcChksum = cksum(icmpHdr, len);
+    icmpHdr->icmp_sum = currChksum;
+
+    return calcChksum;
+}
 
 /* Prints out formatted Ethernet address, e.g. 00:11:22:33:44:55 */
 void print_addr_eth(uint8_t *addr) {
@@ -180,6 +190,10 @@ void print_hdr_icmp(uint8_t *buf) {
   fprintf(stderr, "\tcode: %d\n", icmp_hdr->icmp_code);
   /* Keep checksum in NBO */
   fprintf(stderr, "\tchecksum: %d\n", icmp_hdr->icmp_sum);
+
+fprintf(stderr, "\tid: %d\n", icmp_hdr->icmp_id);
+fprintf(stderr, "\tseq: %d\n", icmp_hdr->icmp_seq);
+
 }
 
 
