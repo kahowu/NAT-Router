@@ -337,13 +337,10 @@ void sr_iphandler (struct sr_instance* sr,
                                 /* Outbound SYN with no prior mapping. Create one! */
                                 pthread_mutex_lock(&((sr->nat).lock));
                                 struct sr_nat_connection *initialConn = malloc(sizeof(struct sr_nat_connection));
-                                struct sr_nat_mapping *nat_lookup;
-                                nat_lookup = malloc(sizeof(struct sr_nat_mapping));
-                                assert(initialConn); assert(nat_lookup);
                                 nat_lookup = sr_nat_insert_mapping(&(sr->nat), ip_hdr->ip_src, tcp_hdr->src_port, nat_mapping_tcp);
                                 nat_lookup->ip_ext = sr_get_interface(sr, dst_lpm->interface)->ip;
                                 nat_lookup->aux_ext = sr_nat_generate_tcp_port(&(sr->nat));
-                                
+                            	assert (nat_lookup != NULL);    
                                 /* Fill in first connection information. */
                                 initialConn->tcp_conn_state = SYN_SENT;
                                 initialConn->last_updated = time(NULL);
@@ -359,8 +356,7 @@ void sr_iphandler (struct sr_instance* sr,
                             } else {
                                 /* Outbound SYN with prior mapping. Add the connection if one doesn't exist */
                                 pthread_mutex_lock(&((sr->nat).lock));
-                                struct sr_nat_mapping * nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src,
-                                tcp_hdr->src_port, nat_mapping_tcp);
+                                
                                 assert(nat_lookup);
 
                                 struct sr_nat_connection *connection = sr_nat_lookup_connection(nat_lookup, ip_hdr->ip_dst, tcp_hdr->dst_port);
@@ -401,8 +397,6 @@ void sr_iphandler (struct sr_instance* sr,
                             /* Outbound FIN detected. Put connection into TIME_WAIT state. */
                             pthread_mutex_lock(&((sr->nat).lock));
 
-                            struct sr_nat_mapping * nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src,
-                            tcp_hdr->src_port, nat_mapping_tcp);
                             assert(nat_lookup);
 
                             struct sr_nat_connection *connection = sr_nat_lookup_connection(nat_lookup, ip_hdr->ip_dst, tcp_hdr->dst_port);
@@ -413,7 +407,7 @@ void sr_iphandler (struct sr_instance* sr,
                             }
                             pthread_mutex_unlock(&((sr->nat).lock));
                         }
-                          
+                
                         nat_lookup->last_updated = time(NULL);
                         ip_hdr->ip_src = nat_lookup->ip_ext;
                         tcp_hdr->src_port = nat_lookup->aux_ext;
@@ -560,6 +554,7 @@ void sr_iphandler (struct sr_instance* sr,
 
                     /* check routing table, and perform LPM */ 
                     /* Look up routing table for the rt entry that is mapped to the destination of received packet */
+		    struct sr_rt *dst_lpm = sr_routing_lpm (sr, ip_hdr->ip_dst);
                     if (dst_lpm) {
                         struct sr_if *out_iface = sr_get_interface(sr, dst_lpm->interface);
                         /* If there is a match, check ARP cache */
