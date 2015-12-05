@@ -233,6 +233,7 @@ struct sr_arp_hdr
 } __attribute__ ((packed)) ;
 typedef struct sr_arp_hdr sr_arp_hdr_t;
 
+/*
 struct sr_tcp_hdr {
     uint16_t src_port;
     uint16_t dst_port;
@@ -271,6 +272,38 @@ struct sr_tcp_hdr {
     uint16_t urg_pointer;
 } __attribute__((packed));
 typedef struct sr_tcp_hdr sr_tcp_hdr_t;
+*/
+
+#define TCP_OFFSET_M (0xF000)
+/** @brief Urgent Pointer field significant */
+#define TCP_URG_M    (0x0020)
+/** @brief Acknowledgment field significant */
+#define TCP_ACK_M    (0x0010)
+/** @brief Push Function */
+#define TCP_PSH_M    (0x0008)
+/** @brief Reset the connection */
+#define TCP_RST_M    (0x0004)
+/** @brief Synchronize sequence numbers */
+#define TCP_SYN_M    (0x0002)
+/** @brief No more data from sender */
+#define TCP_FIN_M    (0x0001)
+
+/**
+ * @brief Header structure for a transmission control protocol (TCP) packet header.
+ * @note controlBits field should not be accessed directly, but used with associated bit masks.
+ * @see http://tools.ietf.org/html/rfc793#section-3.1
+ */
+typedef struct __attribute__((packed))
+{
+   uint16_t src_port; /**< The source port number. */
+   uint16_t dst_port; /**< The destination port number. */
+   uint32_t seq_num; /**< The sequence number of the first data octet in this segment (except when SYN is present) */
+   uint32_t ack_num; /**< Field contains the value of the next sequence number the sender of the segment is expecting to receive */
+   uint16_t ctrl_bits;
+   uint16_t window; /**< The number of data octets beginning with the one indicated in the acknowledgment field which the sender of this segment is willing to accept. */
+   uint16_t tcp_sum;
+   uint16_t urgentPointer; /**< current value of the urgent pointer as a positive offset from the sequence number in this segment. */
+} sr_tcp_hdr_t;
 
 #define sr_IFACE_NAMELEN 32
 #define ETH_HDR 0

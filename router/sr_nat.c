@@ -195,7 +195,9 @@ struct sr_nat_mapping *sr_nat_lookup_external(struct sr_nat *nat,
   curr_mapping = nat->mappings;
 
   while (curr_mapping != NULL) {
-    printf ("[NAT] iterating over the NAT table... \n");   
+    print_nat_mapping (curr_mapping);
+    printf ("[NAT] iterating over the NAT table... \n");  
+    printf ("The external ID is %d\n",aux_ext ); 
     if (curr_mapping->type == type && curr_mapping->aux_ext == aux_ext) {
       target_mapping = curr_mapping;
       break;

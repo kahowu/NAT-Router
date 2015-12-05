@@ -334,8 +334,9 @@ void sr_iphandler (struct sr_instance* sr,
                         sr_tcp_hdr_t *tcp_hdr = (sr_tcp_hdr_t *) (packet + sizeof (sr_ethernet_hdr_t) + sizeof(sr_tcp_hdr_t)); 
                         struct sr_nat_mapping *nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src, ntohs(tcp_hdr->src_port), nat_mapping_tcp);
 
-                        if (tcp_hdr->syn) {
-                            /* Outbound sync with no prior mapping */
+                        if (ntohs(tcp_hdr->ctrl_bits) & TCP_SYN_M) {
+                            printf ("Lets SYNC!\n");
+			    /* Outbound sync with no prior mapping */
                             if (nat_lookup == NULL) {
                                 pthread_mutex_lock(&((sr->nat).lock));
                                 nat_lookup = sr_nat_insert_mapping(&(sr->nat), ip_hdr->ip_src, ntohs(tcp_hdr->src_port), nat_mapping_tcp);
@@ -393,7 +394,7 @@ void sr_iphandler (struct sr_instance* sr,
                                 pthread_mutex_unlock(&((sr->nat).lock));
                             }
                         /* Outbound FIN detected. Put connection into TIME_WAIT state. */
-                        } else if (tcp_hdr->fin){
+                        } else if (ntohs(tcp_hdr->ctrl_bits) & TCP_FIN_M){
                             /* Outbound FIN detected. Put connection into TIME_WAIT state. */
                             pthread_mutex_lock(&((sr->nat).lock));
                             struct sr_nat_connection *connection = sr_nat_lookup_connection(nat_lookup, ip_hdr->ip_dst, tcp_hdr->dst_port);
@@ -415,7 +416,9 @@ void sr_iphandler (struct sr_instance* sr,
                         ip_hdr->ip_sum = 0;
                         ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
                         tcp_hdr->tcp_sum = tcp_cksum(ip_hdr, tcp_hdr, len);
-                    }
+                        print_nat_mapping (nat_lookup);
+
+		    }
 
                     /* check routing table, and perform LPM */ 
                     /* Look up routing table for the rt entry that is mapped to the destination of received packet */
@@ -478,11 +481,12 @@ void sr_iphandler (struct sr_instance* sr,
                     } else if (ip_p == ip_protocol_tcp) {
                         sr_tcp_hdr_t *tcp_hdr = (sr_tcp_hdr_t *) (packet + sizeof (sr_ethernet_hdr_t) + sizeof(sr_tcp_hdr_t)); 
                         struct sr_nat_mapping * nat_lookup = sr_nat_lookup_external(&(sr->nat), tcp_hdr->dst_port, nat_mapping_tcp);
-                        if (nat_lookup == NULL) {
+                        assert (nat_lookup != NULL);
+			if (nat_lookup == NULL) {
                             printf ("[Dropping packet] Mapping doesn't exit \n");
                             return; 
                         }
-                        if (tcp_hdr->syn) {
+                        if ((ntohs(tcp_hdr->ctrl_bits) & TCP_SYN_M)) {
                             /* Potential simultaneous open */
                             pthread_mutex_lock(&((sr->nat).lock));
 
@@ -522,7 +526,7 @@ void sr_iphandler (struct sr_instance* sr,
                             connection->last_updated = time(NULL);
                             pthread_mutex_unlock(&((sr->nat).lock));
 
-                        } else if (tcp_hdr->fin) {
+                        } else if (ntohs(tcp_hdr->ctrl_bits) & TCP_FIN_M) {
                             /* Inbound FIN detected. Put connection into TIME_WAIT state. */
                             pthread_mutex_lock(&((sr->nat).lock));
                             struct sr_nat_connection *connection = sr_nat_lookup_connection(nat_lookup, ip_hdr->ip_src, tcp_hdr->src_port);

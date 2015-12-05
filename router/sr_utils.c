@@ -35,8 +35,8 @@ uint8_t ip_protocol(uint8_t *buf) {
 void print_nat_mapping (struct sr_nat_mapping* nat_mapping) {
   print_addr_ip_int(nat_mapping->ip_int);
   print_addr_ip_int(nat_mapping->ip_ext);
-  print_addr_ip_int(nat_mapping->aux_int);
-  print_addr_ip_int(nat_mapping->aux_ext);
+  printf ("The internal id is %d\n", nat_mapping->aux_int);
+  printf ("The external id is %d\n", nat_mapping->aux_ext);
   return; 
 }
 
