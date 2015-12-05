@@ -96,10 +96,8 @@ void sr_handlepacket(struct sr_instance* sr,
     uint16_t ethtype = ethertype((uint8_t *)eth_hdr);
 
     if (ethtype == ethertype_ip){  
-        printf("Received the IP Packet!\n");
         sr_iphandler(sr, packet, len, interface);
     } else if (ethtype == ethertype_arp){
-        printf("Received the ARP Packet!\n");
         sr_arphandler(sr, packet, len, interface);
     }
 
@@ -318,10 +316,10 @@ void sr_iphandler (struct sr_instance* sr,
 
                         struct sr_nat_mapping *nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_id, nat_mapping_icmp);
                         if (nat_lookup == NULL) {
-                            nat_lookup = sr_nat_insert_mapping(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_id, nat_mapping_icmp); 
-			                nat_lookup->ip_ext = sr_get_interface(sr, dst_lpm->interface)->ip;
-                            nat_lookup->aux_ext = sr_nat_generate_icmp_identifier(&(sr->nat));
-			            }
+                        	nat_lookup = sr_nat_insert_mapping(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_id, nat_mapping_icmp); 
+				nat_lookup->ip_ext = sr_get_interface(sr, dst_lpm->interface)->ip;
+                       		nat_lookup->aux_ext = sr_nat_generate_icmp_identifier(&(sr->nat));
+			}
 
                         nat_lookup->last_updated = time(NULL);
                         icmp_hdr->icmp_id = nat_lookup->aux_ext;
@@ -335,9 +333,9 @@ void sr_iphandler (struct sr_instance* sr,
                         struct sr_nat_mapping *nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src, ntohs(tcp_hdr->src_port), nat_mapping_tcp);
 
                         if (ntohs(tcp_hdr->ctrl_bits) & TCP_SYN_M) {
-                            printf ("Lets SYNC!\n");
 			    /* Outbound sync with no prior mapping */
                             if (nat_lookup == NULL) {
+				printf ("Outbound sync with no existing mapping \n");
                                 pthread_mutex_lock(&((sr->nat).lock));
                                 nat_lookup = sr_nat_insert_mapping(&(sr->nat), ip_hdr->ip_src, ntohs(tcp_hdr->src_port), nat_mapping_tcp);
                                 nat_lookup->ip_ext = sr_get_interface(sr, dst_lpm->interface)->ip;
@@ -358,11 +356,13 @@ void sr_iphandler (struct sr_instance* sr,
                                 pthread_mutex_unlock(&((sr->nat).lock));
                             /* Outbound sync with prior mapping */
                             } else {
+				printf ("Outbound sync with existing mapping \n");
                                 pthread_mutex_lock(&((sr->nat).lock));
                                 struct sr_nat_connection *connection = sr_nat_lookup_connection(nat_lookup, ip_hdr->ip_dst, tcp_hdr->dst_port);
 
                                 if (connection == NULL)
                                 {
+				    printf ("Connection doesn't exist. Creating a new one \n");
                                     /* Connection does not exist. Create it. */
                                     connection = malloc(sizeof(struct sr_nat_connection));
                                     assert(connection);
@@ -378,9 +378,12 @@ void sr_iphandler (struct sr_instance* sr,
                                 } else {
                                     switch (connection->tcp_conn_state) {
                                         case nat_conn_time_wait:
+					    printf ("[TRANS] WAIT -> OUTBOUND SYN \n");
+					    /* Give client opportunity to reopen the connection. */
                                             connection->tcp_conn_state = nat_conn_outbound_syn;
                                             break; 
                                         case nat_conn_inbound_syn_pending:
+					    printf ("[TRANS] PENDING -> CONNECTED \n");
                                             connection->tcp_conn_state = nat_conn_connected;
                                             /* Retry of inbound SYN. Silently drop. */
                                             if (connection->queuedInboundSyn) {free(connection->queuedInboundSyn);}
@@ -395,11 +398,13 @@ void sr_iphandler (struct sr_instance* sr,
                             }
                         /* Outbound FIN detected. Put connection into TIME_WAIT state. */
                         } else if (ntohs(tcp_hdr->ctrl_bits) & TCP_FIN_M){
+			    printf ("Outbound FIN detected. Put connection into TIME_WAIT state \n");
                             /* Outbound FIN detected. Put connection into TIME_WAIT state. */
                             pthread_mutex_lock(&((sr->nat).lock));
                             struct sr_nat_connection *connection = sr_nat_lookup_connection(nat_lookup, ip_hdr->ip_dst, tcp_hdr->dst_port);
                             if (connection)
                             {
+				printf ("THERE IS CONNECTION! \n");
                                 connection->tcp_conn_state = nat_conn_time_wait;
                                 connection->last_updated = time(NULL);
                             }
@@ -428,14 +433,14 @@ void sr_iphandler (struct sr_instance* sr,
                         struct sr_arpentry * arp_entry = sr_arpcache_lookup (sr_cache, dst_lpm->gw.s_addr); 
                         /* If there is a match in our ARP cache, send frame to next hop */
                         if (arp_entry){
-                            printf("There is a match in the ARP cache\n");
+                           
                             memcpy(eth_hdr->ether_shost, out_iface->addr, sizeof(uint8_t)*ETHER_ADDR_LEN);
                             memcpy(eth_hdr->ether_dhost, arp_entry->mac, sizeof(unsigned char)*ETHER_ADDR_LEN);
                             sr_send_packet (sr, packet, len, out_iface->name); 
                             return;
 
                         } else {
-                            printf("There is no match in our ARP cache\n");
+                           /* printf("There is no match in our ARP cache\n");*/
                             /* If there is no match in our ARP cache, send ARP request. */
                             struct sr_arpreq * req = sr_arpcache_queuereq(sr_cache, ip_hdr->ip_dst, packet, len, out_iface->name);
                             handle_arpreq(req, sr);
@@ -480,7 +485,7 @@ void sr_iphandler (struct sr_instance* sr,
                         }
                     } else if (ip_p == ip_protocol_tcp) {
                         sr_tcp_hdr_t *tcp_hdr = (sr_tcp_hdr_t *) (packet + sizeof (sr_ethernet_hdr_t) + sizeof(sr_tcp_hdr_t)); 
-                        struct sr_nat_mapping * nat_lookup = sr_nat_lookup_external(&(sr->nat), tcp_hdr->dst_port, nat_mapping_tcp);
+			struct sr_nat_mapping *nat_lookup = sr_nat_lookup_external(&(sr->nat), ntohs(tcp_hdr->dst_port), nat_mapping_tcp);
                         assert (nat_lookup != NULL);
 			if (nat_lookup == NULL) {
                             printf ("[Dropping packet] Mapping doesn't exit \n");
@@ -494,6 +499,7 @@ void sr_iphandler (struct sr_instance* sr,
                             
                             if (connection == NULL)
                             {
+			       printf ("Potential simultaneous open \n");  
                                /* Potential simultaneous open. */
                                connection = malloc(sizeof(struct sr_nat_connection));
                                assert(connection);
@@ -553,14 +559,13 @@ void sr_iphandler (struct sr_instance* sr,
                         struct sr_arpentry * arp_entry = sr_arpcache_lookup (sr_cache, dst_lpm->gw.s_addr); 
                         /* If there is a match in our ARP cache, send frame to next hop */
                         if (arp_entry){
-                            printf("There is a match in the ARP cache\n");
+                        
                             memcpy(eth_hdr->ether_shost, out_iface->addr, sizeof(uint8_t)*ETHER_ADDR_LEN);
                             memcpy(eth_hdr->ether_dhost, arp_entry->mac, sizeof(unsigned char)*ETHER_ADDR_LEN);
                             sr_send_packet (sr, packet, len, out_iface->name); 
                             return;
 
                         } else {
-                            printf("There is no match in our ARP cache\n");
                             /* If there is no match in our ARP cache, send ARP request. */
                             struct sr_arpreq * req = sr_arpcache_queuereq(sr_cache, ip_hdr->ip_dst, packet, len, out_iface->name);
                             handle_arpreq(req, sr);
@@ -747,7 +752,6 @@ void send_arp_req (sr_arp_hdr_t *arp_hdr, struct sr_arpcache *cache, struct sr_i
             req_packet = req_packet->next;
         }
     }
-    printf("Sent packets from request queue\n");
     sr_arpreq_destroy(cache, req);
 }
 
