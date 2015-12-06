@@ -15,7 +15,6 @@
 #include <inttypes.h>
 #include <time.h>
 #include <pthread.h>
-#include "sr_protocol.h"
 
 typedef enum {
   nat_mapping_icmp,
@@ -37,25 +36,13 @@ typedef enum {
   TIME_WAIT
 } sr_tcp_state;
 
-typedef enum
-{
-   nat_conn_outbound_syn, /**< outbound SYN sent. */
-   nat_conn_inbound_syn_pending, /**< inbound SYN received (and queued). */
-   nat_conn_connected, /**< SYNs sent in both directions. Connection established. */
-   nat_conn_time_wait /**< One of the endpoints has sent a FIN. */
-} sr_nat_tcp_conn_state_t;
-
 struct sr_nat_connection {
     /* add TCP connection state data members here */
-    struct {
-      uint32_t ip_addr;
-      uint16_t port_num;
-    } external;
-   
-    sr_ip_hdr_t * queuedInboundSyn;
+    uint16_t ip;
     time_t last_updated;
-    /*sr_tcp_state tcp_state;*/
-    sr_nat_tcp_conn_state_t tcp_conn_state;
+    uint32_t client_isn;
+    uint32_t server_isn; 
+    sr_tcp_state tcp_state;
     struct sr_nat_connection *next;
 };
 
@@ -67,6 +54,7 @@ struct sr_nat_mapping {
   uint16_t aux_ext; /* external port or icmp id */
   time_t last_updated; /* use to timeout mappings */
   struct sr_nat_connection *conns; /* list of connections. null for ICMP */
+  struct sr_nat_mapping *prev;
   struct sr_nat_mapping *next;
 };
 
@@ -115,15 +103,14 @@ int sr_nat_is_interface_internal(char *interface);
 
 int sr_nat_generate_icmp_identifier(struct sr_nat *nat);
 
-struct sr_nat_connection *sr_nat_lookup_connection(struct sr_nat_mapping *nat_mapping, uint32_t ip_ext, uint16_t port_ext);
+struct sr_nat_connection *sr_nat_lookup_connection (struct sr_nat_connection *curr_connection, uint32_t ip_connection);
+
+struct sr_nat_connection *sr_nat_insert_tcp_connection (struct sr_nat_mapping *mapping, uint32_t ip_connection);
 
 int sr_nat_generate_tcp_port(struct sr_nat *nat);
 
+void sr_nat_destroy_mapping (struct sr_nat *nat, struct sr_nat_mapping *curr_mapping);
 
-void sr_nat_destroy_mapping(struct sr_nat *nat, struct sr_nat_mapping *nat_mapping);
-
-void check_tcp_conns(struct sr_nat *nat, struct sr_nat_mapping *nat_mapping);
-
-void sr_nat_destroy_connection(struct sr_nat_mapping* nat_mapping, struct sr_nat_connection* connection); 
+void destroy_tcp_conn(struct sr_nat_mapping *mapping, struct sr_nat_connection *conn);
 
 #endif
