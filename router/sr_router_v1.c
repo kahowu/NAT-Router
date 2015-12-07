@@ -317,9 +317,9 @@ void sr_iphandler (struct sr_instance* sr,
                         struct sr_nat_mapping *nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_id, nat_mapping_icmp);
                         if (nat_lookup == NULL) {
                         	nat_lookup = sr_nat_insert_mapping(&(sr->nat), ip_hdr->ip_src, icmp_hdr->icmp_id, nat_mapping_icmp); 
-				            nat_lookup->ip_ext = sr_get_interface(sr, dst_lpm->interface)->ip;
+				nat_lookup->ip_ext = sr_get_interface(sr, dst_lpm->interface)->ip;
                        		nat_lookup->aux_ext = sr_nat_generate_icmp_identifier(&(sr->nat));
-			             }
+			}
 
                         nat_lookup->last_updated = time(NULL);
                         icmp_hdr->icmp_id = nat_lookup->aux_ext;
@@ -330,97 +330,100 @@ void sr_iphandler (struct sr_instance* sr,
                         icmp_hdr->icmp_sum = cksum(icmp_hdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t)); 
 		            } else if (ip_p == ip_protocol_tcp) {
                         sr_tcp_hdr_t *tcp_hdr = (sr_tcp_hdr_t *) (packet + sizeof (sr_ethernet_hdr_t) + sizeof(sr_tcp_hdr_t)); 
-                        struct sr_nat_mapping * nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src, tcp_hdr->src_port, nat_mapping_tcp);
-                          
+                        struct sr_nat_mapping *nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src, ntohs(tcp_hdr->src_port), nat_mapping_tcp);
+
                         if (ntohs(tcp_hdr->ctrl_bits) & TCP_SYN) {
+			    /* Outbound sync with no prior mapping */
                             if (nat_lookup == NULL) {
-                                /* Outbound SYN with no prior mapping. Create one! */
+				printf ("Outbound sync with no existing mapping \n");
                                 pthread_mutex_lock(&((sr->nat).lock));
-                                struct sr_nat_connection *initialConn = malloc(sizeof(struct sr_nat_connection));
-                                struct sr_nat_mapping *nat_lookup;
-                                nat_lookup = malloc(sizeof(struct sr_nat_mapping));
-                                assert(initialConn); assert(nat_lookup);
-                                nat_lookup = sr_nat_insert_mapping(&(sr->nat), ip_hdr->ip_src, tcp_hdr->src_port, nat_mapping_tcp);
+                                nat_lookup = sr_nat_insert_mapping(&(sr->nat), ip_hdr->ip_src, ntohs(tcp_hdr->src_port), nat_mapping_tcp);
                                 nat_lookup->ip_ext = sr_get_interface(sr, dst_lpm->interface)->ip;
                                 nat_lookup->aux_ext = sr_nat_generate_tcp_port(&(sr->nat));
-                                
+                                struct sr_nat_connection *initialConn = malloc(sizeof(struct sr_nat_connection));
+
                                 /* Fill in first connection information. */
-                                initialConn->tcp_conn_state = SYN_SENT;
+                                initialConn->tcp_conn_state = OUTBOUND_SYN;
                                 initialConn->last_updated = time(NULL);
                                 initialConn->inboundSyn = NULL;
                                 initialConn->external.ip_addr = ip_hdr->ip_dst;
                                 initialConn->external.port_num = tcp_hdr->dst_port;
-                                
-                                /* Add to the list of connections. */
+
+                                /* Add to the list of connections */
                                 initialConn->next = nat_lookup->conns;
                                 nat_lookup->conns = initialConn;
-                                
-                                pthread_mutex_unlock(&((sr->nat).lock));
-                            } else {
-                                /* Outbound SYN with prior mapping. Add the connection if one doesn't exist */
-                                pthread_mutex_lock(&((sr->nat).lock));
-                                struct sr_nat_mapping * nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src,
-                                tcp_hdr->src_port, nat_mapping_tcp);
-                                assert(nat_lookup);
 
+                                pthread_mutex_unlock(&((sr->nat).lock));
+                            /* Outbound sync with prior mapping */
+                            } else {
+				printf ("Outbound sync with existing mapping \n");
+                                pthread_mutex_lock(&((sr->nat).lock));
                                 struct sr_nat_connection *connection = sr_nat_lookup_connection(nat_lookup, ip_hdr->ip_dst, tcp_hdr->dst_port);
 
-                                if (connection == NULL) {
+                                if (connection == NULL)
+                                {
+				    printf ("Connection doesn't exist. Creating a new one \n");
                                     /* Connection does not exist. Create it. */
-                                    connection = malloc(sizeof(struct sr_nat_connection ));
+                                    connection = malloc(sizeof(struct sr_nat_connection));
                                     assert(connection);
 
                                     /* Fill in connection information. */
-                                    connection->tcp_conn_state = SYN_SENT;
+                                    connection->tcp_conn_state = OUTBOUND_SYN;
                                     connection->external.ip_addr = ip_hdr->ip_dst;
                                     connection->external.port_num = tcp_hdr->dst_port;
 
                                     /* Add to the list of connections. */
                                     connection->next = nat_lookup->conns;
                                     nat_lookup->conns = connection;
-                                } else if (connection->tcp_conn_state == TIME_WAIT) {
-                                    /* Give client opportunity to reopen the connection. */
-                                    connection->tcp_conn_state = SYN_SENT;
-                                } else if (connection->tcp_conn_state == SYN_RCVD) {
-                                    connection->tcp_conn_state = ESTABLISHED;
-                                   
-                                    /* As per lab instructions, silently drop the original unsolicited inbound SYN */
-                                    if (connection->inboundSyn) { free(connection->inboundSyn); }
+                                } else {
+                                    switch (connection->tcp_conn_state) {
+                                        case TIME_WAIT:
+					    printf ("[TRANS] WAIT -> OUTBOUND SYN \n");
+					    /* Give client opportunity to reopen the connection. */
+                                            connection->tcp_conn_state = OUTBOUND_SYN;
+                                            break; 
+                                        case SYN_RCVD:
+					    printf ("[TRANS] PENDING -> CONNECTED \n");
+                                            connection->tcp_conn_state = ESTABLISHED;
+                                            /* Retry of inbound SYN. Silently drop. */
+                                            if (connection->inboundSyn) {free(connection->inboundSyn);}
+                                            break;
+                                        default:
+                                            break;
+                                    }      
                                 }
-                                /* Only other options are connected and outbound syn, in which we 
-                                 * assume this is a retried packet. */
+
                                 connection->last_updated = time(NULL);
                                 pthread_mutex_unlock(&((sr->nat).lock));
                             }
-                        } else if (nat_lookup == NULL) {
-                             /* TCP packet attempted to traverse the NAT on an unopened 
-                              * connection. What to do? Silently drop the packet. */
-                            printf ("Outbound non-SYN TCP packet attempted to traverse NAT. Dropping.\n");
-                            return;
-                        } else if (ntohs(tcp_hdr->ctrl_bits) & TCP_FIN) {
+                        /* Outbound FIN detected. Put connection into TIME_WAIT state. */
+                        } else if (ntohs(tcp_hdr->ctrl_bits) & TCP_FIN_M){
+			    printf ("Outbound FIN detected. Put connection into TIME_WAIT state \n");
                             /* Outbound FIN detected. Put connection into TIME_WAIT state. */
                             pthread_mutex_lock(&((sr->nat).lock));
-
-                            struct sr_nat_mapping * nat_lookup = sr_nat_lookup_internal(&(sr->nat), ip_hdr->ip_src,
-                            tcp_hdr->src_port, nat_mapping_tcp);
-                            assert(nat_lookup);
-
                             struct sr_nat_connection *connection = sr_nat_lookup_connection(nat_lookup, ip_hdr->ip_dst, tcp_hdr->dst_port);
-
-                            if (connection) {
-                                connection->last_updated = time(NULL);
+                            if (connection)
+                            {
+				printf ("THERE IS CONNECTION! \n");
                                 connection->tcp_conn_state = TIME_WAIT;
+                                connection->last_updated = time(NULL);
                             }
                             pthread_mutex_unlock(&((sr->nat).lock));
+
+                        } else if (nat_lookup == NULL) {
+                            printf("[Dropping] Outbound non-SYN TCP packet tries to travel without mapping.\n");
+                            return;
                         }
-                          
+
                         nat_lookup->last_updated = time(NULL);
                         ip_hdr->ip_src = nat_lookup->ip_ext;
-                        tcp_hdr->src_port = nat_lookup->aux_ext;
+                        tcp_hdr->src_port = htons(nat_lookup->aux_ext);
                         ip_hdr->ip_sum = 0;
                         ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
-                        tcp_hdr->tcp_sum = tcp_cksum(ip_hdr, tcp_hdr, len);        
-                    }
+                        tcp_hdr->tcp_sum = tcp_cksum(ip_hdr, tcp_hdr, len);
+                        print_nat_mapping (nat_lookup);
+
+		    }
 
                     /* check routing table, and perform LPM */ 
                     /* Look up routing table for the rt entry that is mapped to the destination of received packet */
@@ -481,106 +484,101 @@ void sr_iphandler (struct sr_instance* sr,
                             return; 
                         }
                     } else if (ip_p == ip_protocol_tcp) {
-                        sr_tcp_hdr_t *tcp_hdr = (sr_tcp_hdr_t *) (packet + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
-                        struct sr_nat_mapping *nat_lookup = sr_nat_lookup_external(&(sr->nat), tcp_hdr->dst_port, nat_mapping_tcp);
+                        sr_tcp_hdr_t *tcp_hdr = (sr_tcp_hdr_t *) (packet + sizeof (sr_ethernet_hdr_t) + sizeof(sr_tcp_hdr_t)); 
+			struct sr_nat_mapping *nat_lookup = sr_nat_lookup_external(&(sr->nat), ntohs(tcp_hdr->dst_port), nat_mapping_tcp);
+                        assert (nat_lookup != NULL);
+			if (nat_lookup == NULL) {
+                            printf ("[Dropping packet] Mapping doesn't exit \n");
+                            return; 
+                        }
+                        if ((ntohs(tcp_hdr->ctrl_bits) & TCP_SYN)) {
+                            /* Potential simultaneous open */
+                            pthread_mutex_lock(&((sr->nat).lock));
 
-                        if (ntohs(tcp_hdr->ctrl_bits) & TCP_SYN) {
-                            /* Inbound SYN received. */
-                            if (nat_lookup== NULL) {
-                                printf ("No mapping. Dropping \n");
-                                return;
+                            struct sr_nat_connection *connection = sr_nat_lookup_connection(nat_lookup, ip_hdr->ip_src, tcp_hdr->src_port);
+                            
+                            if (connection == NULL)
+                            {
+			       printf ("Potential simultaneous open \n");  
+                               /* Potential simultaneous open. */
+                               connection = malloc(sizeof(struct sr_nat_connection));
+                               assert(connection);
+                               
+                               /* Fill in connection information. */
+                               connection->tcp_conn_state = SYN_RCVD;
+                               connection->inboundSyn = malloc(len);
+                               memcpy(connection->inboundSyn, ip_hdr, len);
+                               connection->external.ip_addr = ip_hdr->ip_src;
+                               connection->external.port_num = tcp_hdr->src_port;
+                               
+                               /* Add to the list of connections. */
+                               connection->next = nat_lookup->conns;
+                               nat_lookup->conns = connection;
+                               
+                               return;
                             } else {
-                                /* Potential simultaneous open */
-                                pthread_mutex_lock(&((sr->nat).lock));
-                                struct sr_nat_connection *connection = sr_nat_lookup_connection(nat_lookup, ip_hdr->ip_src, tcp_hdr->src_port);
-
-                                if (connection == NULL) {
-                                    /* Potential simultaneous open. */
-                                    connection = malloc(sizeof(struct sr_nat_connection));
-                                    assert(connection);
-
-                                    /* Fill in connection information. */
-                                    connection->tcp_conn_state = SYN_RCVD;
-                                    connection->inboundSyn = malloc(len);
-                                    memcpy(connection->inboundSyn, ip_hdr, len);
-                                    connection->external.ip_addr = ip_hdr->ip_src;
-                                    connection->external.port_num = tcp_hdr->src_port;
-
-                                    /* Add to the list of connections. */
-                                    connection->next = nat_lookup->conns;
-                                    nat_lookup->conns = connection;
-
-                                    return;
-                                } else if (connection->tcp_conn_state == SYN_RCVD) {
-                                    /* Retry of inbound SYN. Silently drop. */
-                                    return;
+                                switch (connection->tcp_conn_state) {
+                                    case SYN_RCVD:
+                                       /* Retry of inbound SYN. Silently drop. */
+                                        return;
+                                    case OUTBOUND_SYN:
+                                        /* Connection UP! */
+                                        connection->tcp_conn_state = ESTABLISHED;
+                                        break;
+                                    default:
+                                        break;
                                 }
-                                else if (connection->tcp_conn_state == SYN_SENT) {
-                                    connection->tcp_conn_state = ESTABLISHED;
-                                }
-
-                                connection->last_updated = time(NULL);
-                                pthread_mutex_unlock(&((sr->nat).lock));
                             }
-                        } else if (nat_lookup== NULL) {
-                            /* TCP packet attempted to traverse the NAT on an unopened 
-                            * connection. What to do? LOUDLY drop the packet. */
-                            printf ("Inbound non-SYN TCP packet attempted to traverse NAT when no mapping existed. Dropping.\n");
-                            return;
-                        } else if (ntohs(tcp_hdr->ctrl_bits) & TCP_FIN) {
+                            connection->last_updated = time(NULL);
+                            pthread_mutex_unlock(&((sr->nat).lock));
+
+                        } else if (ntohs(tcp_hdr->ctrl_bits) & TCP_FIN_M) {
                             /* Inbound FIN detected. Put connection into TIME_WAIT state. */
                             pthread_mutex_lock(&((sr->nat).lock));
                             struct sr_nat_connection *connection = sr_nat_lookup_connection(nat_lookup, ip_hdr->ip_src, tcp_hdr->src_port);
-                            if (connection) {
+                            if (connection)
+                            {
                                 connection->tcp_conn_state = TIME_WAIT;
-                                connection->last_updated = time(NULL);
                             }
+                            connection->last_updated = time(NULL);
                             pthread_mutex_unlock(&((sr->nat).lock));
-                        } else {
-                            /* Lookup the associated connection to "touch" it and keep it alive. */
-                            pthread_mutex_lock(&((sr->nat).lock));
-                            struct sr_nat_connection *connection = sr_nat_lookup_connection(nat_lookup, ip_hdr->ip_src, tcp_hdr->src_port);
-                            if (connection == NULL) {
-                            /* Received unsolicited non-SYN packet when no active connection was found. */
-                                pthread_mutex_unlock(&((sr->nat).lock));
-                                printf ("Received non-SYN inbound TCP packet, but no active associated connection. Dropping.\n");
-                                return;
-                            } else {
-                                connection->last_updated = time(NULL);
-                                pthread_mutex_unlock(&((sr->nat).lock));
-                            }
                         }
+
                         nat_lookup->last_updated = time(NULL);
                         ip_hdr->ip_dst = nat_lookup->ip_int;
-                        tcp_hdr->dst_port = nat_lookup->aux_int;
+                        tcp_hdr->dst_port = htons(nat_lookup->aux_int);
                         ip_hdr->ip_sum = 0; 
                         ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
                         tcp_hdr->tcp_sum = tcp_cksum(ip_hdr, tcp_hdr, len);
                     }
 
-                    /* check routing table, and perform LPM */ 
-                    /* Look up routing table for the rt entry that is mapped to the destination of received packet */
+                    struct sr_rt *dst_lpm = sr_routing_lpm (sr, ip_hdr->ip_dst);
                     if (dst_lpm) {
                         struct sr_if *out_iface = sr_get_interface(sr, dst_lpm->interface);
                         /* If there is a match, check ARP cache */
                         struct sr_arpentry * arp_entry = sr_arpcache_lookup (sr_cache, dst_lpm->gw.s_addr); 
                         /* If there is a match in our ARP cache, send frame to next hop */
                         if (arp_entry){
-                           
+                        
                             memcpy(eth_hdr->ether_shost, out_iface->addr, sizeof(uint8_t)*ETHER_ADDR_LEN);
                             memcpy(eth_hdr->ether_dhost, arp_entry->mac, sizeof(unsigned char)*ETHER_ADDR_LEN);
                             sr_send_packet (sr, packet, len, out_iface->name); 
                             return;
 
                         } else {
-                           /* printf("There is no match in our ARP cache\n");*/
                             /* If there is no match in our ARP cache, send ARP request. */
                             struct sr_arpreq * req = sr_arpcache_queuereq(sr_cache, ip_hdr->ip_dst, packet, len, out_iface->name);
                             handle_arpreq(req, sr);
                             return;
                         }
+                    } 
+                } else {
+                    if (!sr_nat_is_interface_internal(dst_lpm->interface)) {
+                        /* Look up routing table for the rt entry that is mapped to the destination of received packet */
+                        printf("It is not for an internal interface or router. Dropping the packet \n"); 
+                        return; 
                     }
-                } 
+                }
             }
         } else {
             route_packet (sr, packet, len, interface); 

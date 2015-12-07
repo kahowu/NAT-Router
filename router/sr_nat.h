@@ -23,26 +23,12 @@ typedef enum {
   /* nat_mapping_udp, */
 } sr_nat_mapping_type;
 
-typedef enum {
-  CLOSE_WAIT,
-  CLOSED,
-  CLOSING,
-  ESTABLISHED,
-  FIN_WAIT_1,
-  FIN_WAIT_2,
-  LAST_ACK,
-  LISTEN,
-  SYN_RCVD,
-  SYN_SENT,
-  TIME_WAIT
-} sr_tcp_state;
-
 typedef enum
 {
-   nat_conn_outbound_syn, /**< outbound SYN sent. */
-   nat_conn_inbound_syn_pending, /**< inbound SYN received (and queued). */
-   nat_conn_connected, /**< SYNs sent in both directions. Connection established. */
-   nat_conn_time_wait /**< One of the endpoints has sent a FIN. */
+   SYN_SENT, /**< outbound SYN sent. */
+   SYN_RCVD, /**< inbound SYN received (and queued). */
+   ESTABLISHED, /**< SYNs sent in both directions. Connection established. */
+   TIME_WAIT /**< One of the endpoints has sent a FIN. */
 } sr_nat_tcp_conn_state_t;
 
 struct sr_nat_connection {
@@ -52,7 +38,7 @@ struct sr_nat_connection {
       uint16_t port_num;
     } external;
    
-    sr_ip_hdr_t * queuedInboundSyn;
+    sr_ip_hdr_t * inboundSyn;
     time_t last_updated;
     /*sr_tcp_state tcp_state;*/
     sr_nat_tcp_conn_state_t tcp_conn_state;
@@ -99,17 +85,17 @@ void *sr_nat_timeout(void *nat_ptr);  /* Periodic Timout */
 /* Get the mapping associated with given external port.
    You must free the returned structure if it is not NULL. */
 struct sr_nat_mapping *sr_nat_lookup_external(struct sr_nat *nat,
-    uint16_t aux_ext, sr_nat_mapping_type type );
+    uint16_t aux_ext, sr_nat_mapping_type type);
 
 /* Get the mapping associated with given internal (ip, port) pair.
    You must free the returned structure if it is not NULL. */
 struct sr_nat_mapping *sr_nat_lookup_internal(struct sr_nat *nat,
-  uint32_t ip_int, uint16_t aux_int, sr_nat_mapping_type type );
+  uint32_t ip_int, uint16_t aux_int, sr_nat_mapping_type type);
 
 /* Insert a new mapping into the nat's mapping table.
    You must free the returned structure if it is not NULL. */
 struct sr_nat_mapping *sr_nat_insert_mapping(struct sr_nat *nat,
-  uint32_t ip_int, uint16_t aux_int, sr_nat_mapping_type type );
+  uint32_t ip_int, uint16_t aux_int, sr_nat_mapping_type type);
 
 int sr_nat_is_interface_internal(char *interface); 
 

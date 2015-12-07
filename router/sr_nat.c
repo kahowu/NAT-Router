@@ -89,17 +89,17 @@ void check_tcp_conns(struct sr_nat *nat, struct sr_nat_mapping *nat_mapping) {
     currConn = nat_mapping->conns;
     while (currConn) {
         nextConn = currConn->next;
-        if ((currConn->tcp_conn_state == nat_conn_connected) 
+        if ((currConn->tcp_conn_state == ESTABLISHED) 
             && (difftime(curtime, currConn->last_updated)
             > nat->tcp_estb_timeout))
         {
             sr_nat_destroy_connection(nat_mapping, currConn);
-        } else if (((currConn->tcp_conn_state == nat_conn_outbound_syn) 
-            || (currConn->tcp_conn_state == nat_conn_time_wait))
+        } else if (((currConn->tcp_conn_state == SYN_SENT) 
+            || (currConn->tcp_conn_state == TIME_WAIT))
             && (difftime(curtime, currConn->last_updated) > nat->tcp_trns_timeout)) 
         {     
             sr_nat_destroy_connection(nat_mapping, currConn);
-        } else if ((currConn->tcp_conn_state == nat_conn_inbound_syn_pending)
+        } else if ((currConn->tcp_conn_state == SYN_RCVD)
             && (difftime(curtime, currConn->last_updated) > nat->tcp_trns_timeout))
         {
             /* Check for packet queue*/
@@ -173,9 +173,9 @@ void sr_nat_destroy_connection(struct sr_nat_mapping *nat_mapping, struct sr_nat
          prev = req;
       }
       
-      if(connection->queuedInboundSyn)
+      if(connection->inboundSyn)
       {
-         free(connection->queuedInboundSyn);
+         free(connection->inboundSyn);
       }
       
       free(connection);
@@ -185,7 +185,7 @@ void sr_nat_destroy_connection(struct sr_nat_mapping *nat_mapping, struct sr_nat
 /* Get the mapping associated with given external port.
    You must free the returned structure if it is not NULL. */
 struct sr_nat_mapping *sr_nat_lookup_external(struct sr_nat *nat,
-    uint16_t aux_ext, sr_nat_mapping_type type ) {
+    uint16_t aux_ext, sr_nat_mapping_type type) {
 
   printf  ("NAT lookup given external port \n");
   pthread_mutex_lock(&(nat->lock));
@@ -213,7 +213,7 @@ struct sr_nat_mapping *sr_nat_lookup_external(struct sr_nat *nat,
 /* Get the mapping associated with given internal (ip, port) pair.
    You must free the returned structure if it is not NULL. */
 struct sr_nat_mapping *sr_nat_lookup_internal(struct sr_nat *nat,
-  uint32_t ip_int, uint16_t aux_int, sr_nat_mapping_type type ) {
+  uint32_t ip_int, uint16_t aux_int, sr_nat_mapping_type type) {
 
   printf  ("NAT lookup given internal port \n");
   pthread_mutex_lock(&(nat->lock));

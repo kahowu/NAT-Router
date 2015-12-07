@@ -274,19 +274,19 @@ struct sr_tcp_hdr {
 typedef struct sr_tcp_hdr sr_tcp_hdr_t;
 */
 
-#define TCP_OFFSET_M (0xF000)
+#define TCP_OFFSET (0xF000)
 /** @brief Urgent Pointer field significant */
-#define TCP_URG_M    (0x0020)
+#define TCP_URG    (0x0020)
 /** @brief Acknowledgment field significant */
-#define TCP_ACK_M    (0x0010)
+#define TCP_ACK    (0x0010)
 /** @brief Push Function */
-#define TCP_PSH_M    (0x0008)
+#define TCP_PSH    (0x0008)
 /** @brief Reset the connection */
-#define TCP_RST_M    (0x0004)
+#define TCP_RST    (0x0004)
 /** @brief Synchronize sequence numbers */
-#define TCP_SYN_M    (0x0002)
+#define TCP_SYN    (0x0002)
 /** @brief No more data from sender */
-#define TCP_FIN_M    (0x0001)
+#define TCP_FIN    (0x0001)
 
 /**
  * @brief Header structure for a transmission control protocol (TCP) packet header.
